@@ -1,0 +1,23 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: cricket-postgres
+    environment:
+      POSTGRES_USER: cricket
+      POSTGRES_PASSWORD: cricket_dev_password
+      POSTGRES_DB: cricket_marketplace
+    ports:
+      - "5432:5432"
+
+  mongo:
+    image: mongo:8
+    container_name: cricket-mongo
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:8
+    container_name: cricket-redis
+    ports:
+      - "6379:6379"
