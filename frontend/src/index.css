@@ -1,0 +1,412 @@
+@import "@fontsource/big-shoulders-display/700";
+@import "@fontsource/big-shoulders-display/800";
+@import "@fontsource/big-shoulders-display/900";
+@import "@fontsource/barlow/400";
+@import "@fontsource/barlow/500";
+@import "@fontsource/barlow/600";
+@import "@fontsource/ibm-plex-mono/400";
+@import "@fontsource/ibm-plex-mono/500";
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------------
+   Tokens. Palette is taken from the game itself: a warm night-match black,
+   trophy brass, cricket-whites cream, ball-leather red and pitch green.
+   ------------------------------------------------------------------------ */
+@theme {
+  --color-night: #0d0c0a;
+  --color-surface: #16140f;
+  --color-raised: #1d1a14;
+  --color-line: #2d2921;
+  --color-line-strong: #3d372c;
+  --color-cream: #efe6d2;
+  --color-mute: #9b927f;
+  --color-faint: #6b6456;
+  --color-brass: #c9a55c;
+  --color-brass-bright: #e6c67a;
+  --color-leather: #b3372b;
+  --color-pitch: #3f7d4e;
+
+  --color-common: #d9d2c3;
+  --color-rare: #d4503b;
+  --color-epic: #34b37a;
+  --color-legendary: #e7b84f;
+
+  --font-display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-night);
+  color: var(--color-cream);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgb(201 165 92 / 0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(63 125 78 / 0.08), transparent 60%),
+    var(--color-night);
+}
+
+/* Film grain over everything: keeps large dark areas from looking flat. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: var(--color-brass);
+  color: var(--color-night);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-mute);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 44px;
+  padding: 0 1.25rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--color-brass); color: var(--color-night); }
+.btn-primary:hover:not(:disabled) { background: var(--color-brass-bright); }
+.btn-ghost { border: 1px solid var(--color-line-strong); color: var(--color-cream); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--color-brass); color: var(--color-brass-bright); }
+.btn-danger { border: 1px solid rgb(179 55 43 / 0.6); color: #e88a7d; }
+.btn-danger:hover:not(:disabled) { background: rgb(179 55 43 / 0.15); }
+
+.chip {
+  height: 32px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-mute);
+  border-radius: 999px;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.chip:hover { color: var(--color-cream); border-color: var(--color-line-strong); }
+.chip[data-active="true"] { color: var(--color-night); background: var(--color-cream); border-color: var(--color-cream); }
+
+/* ------------------------------------------------------------------------
+   Trading card. Sized by its container; all inner sizes use cqw so the same
+   card works at thumbnail and hero size.
+   ------------------------------------------------------------------------ */
+.tc {
+  --rx: 0deg;
+  --ry: 0deg;
+  --mx: 50%;
+  --my: 50%;
+  --accent: var(--color-common);
+  --accent-deep: #4a463d;
+  position: relative;
+  aspect-ratio: 5 / 7;
+  perspective: 900px;
+  container-type: inline-size;
+  user-select: none;
+}
+.tc--sm { width: 180px; }
+.tc--md { width: 230px; }
+.tc--lg { width: min(360px, 100%); }
+.tc--fluid { width: 100%; }
+
+.tc--common    { --accent: var(--color-common);    --accent-deep: #4d4940; }
+.tc--rare      { --accent: var(--color-rare);      --accent-deep: #5e1a12; }
+.tc--epic      { --accent: var(--color-epic);      --accent-deep: #0e3d29; }
+.tc--legendary { --accent: var(--color-legendary); --accent-deep: #5a4212; }
+
+.tc__body {
+  position: relative;
+  height: 100%;
+  padding: 2.4cqw;
+  border-radius: 5cqw;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s;
+  box-shadow: 0 24px 40px -20px rgb(0 0 0 / 0.9);
+}
+.tc[data-active] .tc__body { transition-duration: 0.08s, 0.3s; }
+
+/* Frames: Common is flat, everything above it is metallic. */
+.tc--common .tc__body    { background: linear-gradient(160deg, #47433a, #24211c 55%, #3a362e); }
+.tc--rare .tc__body      { background: linear-gradient(160deg, #eb7a63, #7a2418 38%, #d25a44 64%, #4a130c); }
+.tc--epic .tc__body      { background: linear-gradient(160deg, #7fe0b0, #13603f 38%, #45c088 64%, #0a3222); }
+.tc--legendary .tc__body {
+  background: linear-gradient(160deg, #fdebb5, #b8862e 32%, #f7d98c 58%, #8a611b 82%, #e9c26a);
+  box-shadow: 0 24px 40px -20px rgb(0 0 0 / 0.9), 0 0 44px -10px rgb(231 184 79 / 0.45);
+}
+
+.tc__face {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6.5cqw 6.5cqw 5.5cqw;
+  overflow: hidden;
+  border-radius: 3.2cqw;
+  color: var(--color-cream);
+  background:
+    radial-gradient(110% 70% at 50% 28%, color-mix(in oklab, var(--accent-deep) 85%, #0d0c0a), #0e0d0b 78%);
+}
+
+.tc__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--accent);
+  opacity: 0.55;
+  /* Fade the creases out before they reach the name. */
+  mask-image: linear-gradient(to bottom, #000 44%, transparent 58%);
+}
+
+.tc__top {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 4.3cqw;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tc__rarity { color: var(--accent); }
+.tc__country { color: rgb(239 230 210 / 0.7); }
+
+.tc__name {
+  position: relative;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  line-height: 0.86;
+  text-transform: uppercase;
+  font-family: var(--font-display);
+}
+.tc__first {
+  font-size: 6.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgb(239 230 210 / 0.72);
+  margin-bottom: 1.2cqw;
+}
+.tc__last {
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  text-shadow: 0 2px 18px rgb(0 0 0 / 0.6);
+}
+
+.tc__foot {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 4.5cqw;
+  padding-top: 3.2cqw;
+  border-top: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  font-family: var(--font-mono);
+  font-size: 3.9cqw;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(239 230 210 / 0.72);
+}
+.tc__serial { color: var(--color-cream); }
+.tc__serial b { color: var(--accent); font-weight: 500; }
+
+.tc__low {
+  position: absolute;
+  top: 15cqw;
+  right: 6.5cqw;
+  padding: 0.8cqw 2cqw;
+  border: 1px solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: 3.2cqw;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+/* Foil layer: only Epic and Legendary get it. The band position follows the
+   cursor; Legendary also drifts on its own so it shimmers at rest. */
+.tc__holo {
+  position: absolute;
+  inset: 2.4cqw;
+  border-radius: 3.2cqw;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+  opacity: 0;
+  background-size: 260% 260%;
+  background-position: var(--mx) var(--my);
+  transition: opacity 0.3s;
+}
+.tc--epic .tc__holo {
+  opacity: 0.3;
+  background-image: repeating-linear-gradient(115deg,
+    transparent 0%, rgb(52 179 122 / 0.5) 9%, rgb(190 245 210 / 0.65) 12%,
+    rgb(20 110 80 / 0.4) 15%, transparent 22%);
+}
+.tc--legendary .tc__holo {
+  opacity: 0.38;
+  background-image: repeating-linear-gradient(115deg,
+    transparent 0%, rgb(255 210 110 / 0.55) 8%, rgb(255 246 214 / 0.75) 11%,
+    rgb(190 128 36 / 0.45) 14%, transparent 21%);
+  animation: foil-drift 7s linear infinite;
+}
+.tc[data-active] .tc__holo { opacity: 0.7; animation: none; }
+
+@keyframes foil-drift {
+  from { background-position: 0% 0%; }
+  to   { background-position: 100% 100%; }
+}
+
+.tc__glare {
+  position: absolute;
+  inset: 0;
+  border-radius: 5cqw;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0;
+  background: radial-gradient(circle at var(--mx) var(--my), rgb(255 255 255 / 0.45), transparent 48%);
+  transition: opacity 0.3s;
+}
+.tc[data-active] .tc__glare { opacity: 1; }
+
+/* Card back: dark outfield green with a stitched ball seam. The outer element
+   is the size container; the frame inside it can then size itself in cqw. */
+.tc-back {
+  position: relative;
+  aspect-ratio: 5 / 7;
+  container-type: inline-size;
+}
+.tc-back__frame {
+  height: 100%;
+  padding: 2.4cqw;
+  border-radius: 5cqw;
+  background: linear-gradient(160deg, #d8b66c, #7c5a1e 40%, #c9a55c 70%, #5e4414);
+  box-shadow: 0 24px 40px -20px rgb(0 0 0 / 0.9);
+}
+.tc-back__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6cqw;
+  height: 100%;
+  border-radius: 3.2cqw;
+  background:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.025) 0 2px, transparent 2px 9px),
+    radial-gradient(90% 60% at 50% 45%, #1c3b28, #0c1a12 80%);
+  color: var(--color-brass);
+}
+.tc-back__word {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 11cqw;
+  letter-spacing: 0.32em;
+  margin-right: -0.32em;
+}
+.tc-back__sub {
+  font-family: var(--font-mono);
+  font-size: 3.6cqw;
+  letter-spacing: 0.2em;
+  color: rgb(201 165 92 / 0.6);
+  text-transform: uppercase;
+}
+
+/* Flip container for the reveal. */
+.flip { perspective: 1400px; }
+.flip__inner { position: relative; width: 100%; aspect-ratio: 5 / 7; transform-style: preserve-3d; }
+.flip__face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip__front { transform: rotateY(180deg); }
+
+/* ------------------------------------------------------------------------
+   Pack wrapper: crimped foil with a sheen that sweeps across on hover.
+   ------------------------------------------------------------------------ */
+.pack {
+  position: relative;
+  aspect-ratio: 5 / 8;
+  container-type: inline-size;
+  overflow: hidden;
+  filter: drop-shadow(0 30px 30px rgb(0 0 0 / 0.55));
+}
+.pack__foil {
+  position: absolute;
+  inset: 0;
+}
+.pack--standard .pack__foil {
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 6px),
+    linear-gradient(155deg, #2c6a45, #10301f 45%, #1d4e33 70%, #0b2216);
+  color: var(--color-cream);
+}
+.pack--premium .pack__foil {
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.025) 0 1px, transparent 1px 6px),
+    linear-gradient(155deg, #2a241a, #0c0b09 45%, #1f1a12 70%, #070605);
+  color: var(--color-brass-bright);
+}
+.pack__foil::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / 0.16) 48%, transparent 56%);
+  transform: translateX(-60%);
+  transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pack:hover .pack__foil::after,
+.pack[data-live="true"] .pack__foil::after { transform: translateX(60%); }
+
+.pack__crimp {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7%;
+  background: repeating-linear-gradient(90deg, rgb(0 0 0 / 0.35) 0 2px, rgb(255 255 255 / 0.06) 2px 4px);
+}
+
+/* Rare battle themes get a slow brass sheen. */
+.theme-rare {
+  background:
+    linear-gradient(110deg, transparent 30%, rgb(230 198 122 / 0.12) 45%, transparent 60%) 0 0 / 250% 100%,
+    linear-gradient(160deg, #2a2217, #14110c 60%, #1f1910);
+  animation: rare-sheen 5s linear infinite;
+}
+@keyframes rare-sheen {
+  from { background-position: 150% 0, 0 0; }
+  to   { background-position: -100% 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-rare { animation: none; }
+  .tc__holo { animation: none; }
+  .tc__body, .pack__foil::after { transition: none; }
+}
