@@ -4,6 +4,7 @@ services:
   - type: web
     name: crease
     runtime: docker
+    region: singapore
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz   # open even behind SITE_PASSWORD
