@@ -2,7 +2,9 @@
 
 import httpx
 
-from backend.tests.conftest import grant, make_definition, make_player, make_pool, make_user, mint, run_parallel
+from backend.main import SIGNUP_GRANT
+
+from backend.tests.conftest import acting, grant, make_definition, make_player, make_pool, make_user, mint, run_parallel
 
 
 def test_concurrent_buys_exactly_one_succeeds(api, base_url, db):
@@ -12,7 +14,7 @@ def test_concurrent_buys_exactly_one_succeeds(api, base_url, db):
     buyers = [make_user(api, f"buyer{i}") for i in range(10)]
 
     results = run_parallel([
-        lambda b=b: httpx.post(f"{base_url}/listings/{listing}/buy", params={"buyer_id": b}, timeout=30)
+        lambda b=b: acting.post(f"{base_url}/listings/{listing}/buy", params={"buyer_id": b}, timeout=30)
         for b in buyers
     ])
 
@@ -21,7 +23,7 @@ def test_concurrent_buys_exactly_one_succeeds(api, base_url, db):
     winner = buyers[[r.status_code for r in results].index(200)]
     assert db.execute("SELECT owner_id FROM card_instances WHERE id = %s", (card,)).fetchone()["owner_id"] == winner
     # Seller got the price minus the 5% burn, exactly once.
-    assert db.execute("SELECT balance FROM users WHERE id = %s", (seller,)).fetchone()["balance"] == 1000 + 300 - 15
+    assert db.execute("SELECT balance FROM users WHERE id = %s", (seller,)).fetchone()["balance"] == SIGNUP_GRANT + 300 - 15
 
 
 def test_concurrent_pack_openings_no_deadlocks(api, base_url, db):
@@ -31,7 +33,7 @@ def test_concurrent_pack_openings_no_deadlocks(api, base_url, db):
         grant(api, u, 5000)
 
     results = run_parallel([
-        lambda i=i: httpx.post(
+        lambda i=i: acting.post(
             f"{base_url}/packs/open",
             json={"user_id": users[i % 2], "pack_type": "premium" if i % 3 == 0 else "standard"},
             timeout=60,
@@ -72,8 +74,8 @@ def test_concurrent_cancel_and_relist_same_card(api, base_url, db):
         first = api.post("/listings", json={"card_instance_id": card, "seller_id": seller, "price": "100"}).json()["id"]
 
         cancel, relist = run_parallel([
-            lambda: httpx.post(f"{base_url}/listings/{first}/cancel", params={"seller_id": seller}, timeout=30),
-            lambda: httpx.post(
+            lambda: acting.post(f"{base_url}/listings/{first}/cancel", params={"seller_id": seller}, timeout=30),
+            lambda: acting.post(
                 f"{base_url}/listings",
                 json={"card_instance_id": card, "seller_id": seller, "price": "150"},
                 timeout=30,
@@ -98,8 +100,8 @@ def test_relist_racing_a_buy_never_lists_someone_elses_card(api, base_url, db):
         listing = api.post("/listings", json={"card_instance_id": card, "seller_id": seller, "price": "10"}).json()["id"]
 
         buy, relist = run_parallel([
-            lambda: httpx.post(f"{base_url}/listings/{listing}/buy", params={"buyer_id": buyer}, timeout=30),
-            lambda: httpx.post(
+            lambda: acting.post(f"{base_url}/listings/{listing}/buy", params={"buyer_id": buyer}, timeout=30),
+            lambda: acting.post(
                 f"{base_url}/listings",
                 json={"card_instance_id": card, "seller_id": seller, "price": "20"},
                 timeout=30,

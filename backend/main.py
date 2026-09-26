@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from backend.database import get_connection
-from backend.schemas import UserResponse, UserCreate, PlayerCreate, PlayerResponse, CardDefinitionCreate, CardDefinitionResponse, CardInstanceCreate, CardInstanceResponse, CardInstanceDetailResponse, ListingCreate, ListingResponse, GrantCreate, PackOpenRequest, PackOpenResponse, CollectionCardResponse, MarketplaceListingResponse, CardEventResponse, SaleResponse, PlayerDetailResponse, PlayerThemeStatsResponse
+from backend.auth import current_user_id, require_self, router as auth_router
+from backend.schemas import UserResponse, PlayerCreate, PlayerResponse, CardDefinitionCreate, CardDefinitionResponse, CardInstanceCreate, CardInstanceResponse, CardInstanceDetailResponse, ListingCreate, ListingResponse, GrantCreate, PackOpenRequest, PackOpenResponse, CollectionCardResponse, MarketplaceListingResponse, CardEventResponse, SaleResponse, PlayerDetailResponse, PlayerThemeStatsResponse
 from backend.packs import PACK_TYPES, pick_definitions
 from backend.themes import THEMES
 from backend.battle_routes import router as battle_router
@@ -26,8 +27,9 @@ api.add_middleware(
 )
 
 api.include_router(battle_router)
+api.include_router(auth_router)
 
-SIGNUP_GRANT = Decimal("1000.00")
+SIGNUP_GRANT = Decimal("10000.00")
 MARKET_FEE_RATE = Decimal("0.05")
 
 
@@ -152,7 +154,7 @@ def get_users():
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, username, email, balance
+                SELECT id, username, balance
                 FROM users
                 ORDER BY id
                 """
@@ -160,29 +162,9 @@ def get_users():
             users = cursor.fetchall()
     return users
 
-@api.post("/users", response_model=UserResponse)
-def create_user(user: UserCreate):
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO users(username, email)
-                VALUES (%s, %s)
-                RETURNING id, username, email, balance;
-                """,
-                (user.username, user.email)
-            )
-
-            created_user = cursor.fetchone()
-
-            updated = apply_balance_change(
-                cursor, created_user["id"], SIGNUP_GRANT, "MINT_SIGNUP"
-            )
-            created_user["balance"] = updated["balance"]
-    return created_user
-
-# Dev-only faucet: mints Runs from nothing. Off unless DEV_FAUCET_ENABLED is
-# set, and when off the route isn't registered at all (plain 404).
+# Dev tools: the faucet (mints Runs from nothing) and the admin endpoints that
+# create players, card definitions and cards. Off unless DEV_FAUCET_ENABLED is
+# set; when off the routes aren't registered at all (plain 404).
 def dev_grant(user_id: int, grant: GrantCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -200,7 +182,7 @@ def dev_grant(user_id: int, grant: GrantCreate):
 
             cursor.execute(
                 """
-                SELECT id, username, email, balance FROM users WHERE id = %s;
+                SELECT id, username, balance FROM users WHERE id = %s;
                 """,
                 (user_id,),
             )
@@ -208,10 +190,12 @@ def dev_grant(user_id: int, grant: GrantCreate):
     return user
 
 
-if DEV_FAUCET_ENABLED:
+def register_dev_tools():
     api.post("/dev/users/{user_id}/grant", response_model=UserResponse)(dev_grant)
+    api.post("/players", response_model=PlayerResponse)(create_player)
+    api.post("/card-definitions", response_model=CardDefinitionResponse)(create_card_definition)
+    api.post("/card-instances", response_model=CardInstanceResponse)(create_card_instance)
 
-@api.post("/players", response_model=PlayerResponse)
 def create_player(player:PlayerCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -333,7 +317,6 @@ def get_player_theme_stats(player_id: int):
     return {"hidden": False, "themes": themes}
 
 
-@api.post("/card-definitions", response_model=CardDefinitionResponse)
 def create_card_definition(card: CardDefinitionCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -372,7 +355,6 @@ def create_card_definition(card: CardDefinitionCreate):
     return created_card
 
 
-@api.post("/card-instances", response_model=CardInstanceResponse)
 def create_card_instance(card: CardInstanceCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -501,7 +483,8 @@ def get_card_instance(card_id: int):
     return card
 
 @api.post("/listings", response_model=ListingResponse)
-def create_listing(listing:ListingCreate):
+def create_listing(listing:ListingCreate, me: int = Depends(current_user_id)):
+    require_self(me, listing.seller_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
 
@@ -566,7 +549,8 @@ def create_listing(listing:ListingCreate):
     return created
 
 @api.post("/listings/{listing_id}/cancel", response_model=ListingResponse)
-def cancel_listing(listing_id: int, seller_id: int):
+def cancel_listing(listing_id: int, seller_id: int, me: int = Depends(current_user_id)):
+    require_self(me, seller_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
 
@@ -643,7 +627,8 @@ def cancel_listing(listing_id: int, seller_id: int):
 
 
 @api.post("/listings/{listing_id}/buy", response_model=ListingResponse)
-def buy_listing(listing_id: int, buyer_id: int):
+def buy_listing(listing_id: int, buyer_id: int, me: int = Depends(current_user_id)):
+    require_self(me, buyer_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
 
@@ -806,7 +791,8 @@ def get_pack_types():
 
 
 @api.post("/packs/open", response_model=PackOpenResponse)
-def open_pack(request: PackOpenRequest):
+def open_pack(request: PackOpenRequest, me: int = Depends(current_user_id)):
+    require_self(me, request.user_id)
     config = PACK_TYPES[request.pack_type]
 
     with get_connection() as connection:
@@ -1159,6 +1145,9 @@ def get_price_history(card_definition_id: int, limit: int = 50):
 
     return sales
 
+
+if DEV_FAUCET_ENABLED:
+    register_dev_tools()
 
 from backend.web import build_app  # noqa: E402  (needs `api` defined above)
 

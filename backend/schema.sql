@@ -7,7 +7,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id          BIGSERIAL PRIMARY KEY,
     username    TEXT NOT NULL UNIQUE,
-    email       TEXT NOT NULL UNIQUE,
+    email       TEXT UNIQUE,
+    password_hash TEXT,                       -- scrypt; NULL = can't log in
     balance     NUMERIC(12,2) NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT users_balance_non_negative CHECK (balance >= 0)
@@ -216,3 +217,15 @@ CREATE TABLE IF NOT EXISTS battle_rounds (
     PRIMARY KEY (battle_id, round),
     CHECK (challenger_points + opponent_points <= 2)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_key ON users (lower(username));
+
+-- One row per logged-in browser. Only a SHA-256 of the cookie's token is
+-- stored, so a database leak doesn't hand out live sessions.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash  TEXT PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);

@@ -38,7 +38,13 @@ To fill a fresh database with real players and a card pool (downloads Cricsheet 
 
 The tests create and drop their own `cricket_test` database on the local Postgres. Set `TEST_DATABASE_URL` to point them elsewhere. CI runs the same suite against a Postgres service container on every push, and also builds the Docker image.
 
-## Configuration
+## Accounts
+
+Players register with a username and password; every new account gets 10,000 Runs. Passwords are stored as scrypt hashes. A login is a server-side session held in an HttpOnly cookie, so it works the same in every tab and on every device. Every action (opening packs, listing, buying, battle picks and calls) is checked against the logged-in user, and acting for anyone else is refused. Browsing (the market, card pages, the player list) doesn't need the account to be the owner, but the site still asks everyone to log in first.
+
+`SITE_PASSWORD` is optional on top of accounts. Keep it if you want to stop strangers even reaching the sign-up page.
+
+
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -47,7 +53,7 @@ The tests create and drop their own `cricket_test` database on the local Postgre
 | `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `5` | Connections held by the app. Free Postgres plans allow few. |
 | `SITE_PASSWORD` | unset (site open) | If set, the whole site asks for this password (HTTP basic auth; any username). |
 | `FORCE_HTTPS` | on | Requests the proxy reports as plain HTTP (`X-Forwarded-Proto: http`) are redirected to HTTPS, so the password never travels unencrypted. Set `0` to disable. |
-| `DEV_FAUCET_ENABLED` | unset (off) | Enables the Run-minting dev endpoint. **Leave unset in production.** |
+| `DEV_FAUCET_ENABLED` | unset (off) | Enables the dev tools: the Run faucet and the admin endpoints that create players, card definitions and cards. **Leave unset in production.** |
 | `PORT` | `8000` in the image | Render sets it. |
 
 `/healthz` is always open (it returns only `ok`) so the host's health check works behind the password.

@@ -79,11 +79,15 @@ def run(code, **env):
     return subprocess.run([sys.executable, "-c", code], cwd=REPO, env=full, capture_output=True, text=True, timeout=60)
 
 
-def test_dev_faucet_absent_unless_enabled():
+def test_dev_tools_absent_unless_enabled():
+    """The faucet and the admin endpoints that create players, definitions and
+    cards must not exist in production."""
     code = ("from backend.main import api; "
-            "print(any(getattr(r, 'path', '') == '/dev/users/{user_id}/grant' for r in api.routes))")
-    assert run(code, DEV_FAUCET_ENABLED="").stdout.strip() == "False"
-    assert run(code, DEV_FAUCET_ENABLED="1").stdout.strip() == "True"
+            "paths = {getattr(r, 'path', '') for r in api.routes if 'POST' in getattr(r, 'methods', ())}; "
+            "print(sorted(p for p in paths if p in {'/dev/users/{user_id}/grant', '/players', '/card-definitions', '/card-instances'}))")
+    assert run(code, DEV_FAUCET_ENABLED="").stdout.strip() == "[]"
+    assert run(code, DEV_FAUCET_ENABLED="1").stdout.strip() == str(sorted(
+        ["/dev/users/{user_id}/grant", "/players", "/card-definitions", "/card-instances"]))
 
 
 def test_database_url_is_required():

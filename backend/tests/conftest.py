@@ -2,7 +2,9 @@
 served by uvicorn in a background thread so concurrency tests make genuinely
 parallel HTTP requests."""
 
+import json
 import os
+import re
 import socket
 import threading
 import time
@@ -39,6 +41,10 @@ _recreate_database()
 
 import uvicorn  # noqa: E402
 from backend.audit import check_invariants  # noqa: E402
+from backend.auth import COOKIE  # noqa: E402
+# Session state lives in its own module: pytest imports this conftest under two
+# names, and both copies must see the same tokens.
+from backend.tests.sessions import TOKENS, _attach_session, acting  # noqa: E402,F401
 from backend.main import app  # noqa: E402
 
 
@@ -66,7 +72,7 @@ def base_url():
 
 @pytest.fixture
 def api(base_url):
-    with httpx.Client(base_url=base_url, timeout=30) as client:
+    with httpx.Client(base_url=base_url, timeout=30, event_hooks={"request": [_attach_session]}) as client:
         yield client
 
 
@@ -81,6 +87,7 @@ def clean_and_check(db):
     """Every test starts empty and must leave every invariant intact."""
     tables = [r["tablename"] for r in db.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
     db.execute(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE")
+    TOKENS.clear()
     yield
     assert_invariants(db)
 
@@ -94,10 +101,16 @@ def assert_invariants(db):
 # Factories
 # ---------------------------------------------------------------------------
 
+PASSWORD = "test-password-123"
+
+
 def make_user(api, name):
-    r = api.post("/users", json={"username": name, "email": f"{name}@test.local"})
+    r = api.post("/auth/register", json={"username": name, "password": PASSWORD})
     assert r.status_code == 200, r.text
-    return r.json()["id"]
+    user_id = r.json()["id"]
+    TOKENS[user_id] = r.cookies[COOKIE]
+    api.cookies.clear()  # sessions are attached per request, never from the jar
+    return user_id
 
 
 def grant(api, user_id, amount):

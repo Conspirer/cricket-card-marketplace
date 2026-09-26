@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 from backend.tests.conftest import TEST_DB_URL, grant, make_pool, make_user, mint
 
 REPO = Path(__file__).resolve().parents[2]
-EMPTIED = ["users", "card_instances", "listings", "pack_openings", "currency_ledger",
+EMPTIED = ["users", "sessions", "card_instances", "listings", "pack_openings", "currency_ledger",
            "card_ownership_events", "battles", "battle_moves", "battle_rounds"]
 
 

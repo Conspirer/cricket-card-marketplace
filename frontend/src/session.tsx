@@ -1,40 +1,36 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { createContext, useContext, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type User } from "./api";
 
-// No auth yet: the "session" is just which user you're acting as, picked in
-// the header. Swap this for a real login once the backend has auth.
-type Session = { user: User | null; users: User[]; setUserId: (id: number) => void };
+// The logged-in user comes from the server session (an HttpOnly cookie), so
+// it's the same in every tab and can't be switched from the browser.
+type Session = {
+  user: User | null;
+  loading: boolean;
+  users: User[];
+  logout: () => Promise<void>;
+};
 
 const SessionContext = createContext<Session | null>(null);
-const STORAGE_KEY = "crease:user-id";
-
-function readStoredId() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? Number(raw) : null;
-  } catch {
-    return null;
-  }
-}
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: api.users });
-  const [userId, setUserIdState] = useState<number | null>(readStoredId);
+  const queryClient = useQueryClient();
+  // Keys start with "users" so invalidating ["users"] after a purchase also
+  // refreshes the header balance.
+  const me = useQuery({ queryKey: ["users", "me"], queryFn: api.me, staleTime: 5_000 });
+  const { data: users = [] } = useQuery({ queryKey: ["users", "all"], queryFn: api.users, enabled: !!me.data });
 
-  const setUserId = (id: number) => {
-    setUserIdState(id);
-    try {
-      localStorage.setItem(STORAGE_KEY, String(id));
-    } catch {
-      // Storage can be unavailable (private mode); the choice just won't persist.
-    }
+  const logout = async () => {
+    await api.logout();
+    queryClient.clear();
+    await queryClient.invalidateQueries();
   };
 
-  // Fall back to the first user if nothing is stored (or the stored user is gone).
-  const user = users.find((u) => u.id === userId) ?? users[0] ?? null;
-
-  return <SessionContext.Provider value={{ user, users, setUserId }}>{children}</SessionContext.Provider>;
+  return (
+    <SessionContext.Provider value={{ user: me.data ?? null, loading: me.isLoading, users, logout }}>
+      {children}
+    </SessionContext.Provider>
+  );
 }
 
 export function useSession() {

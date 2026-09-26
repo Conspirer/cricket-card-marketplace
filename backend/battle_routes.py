@@ -12,11 +12,12 @@ card or call is shown to the other before both are in.
 
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from backend import battles as rules
+from backend.auth import current_user_id, require_self
 from backend.database import get_connection
 from backend.themes import STATS, THEMES
 
@@ -493,7 +494,8 @@ def view(battle, viewer_id):
 # ---------------------------------------------------------------------------
 
 @router.post("/battles")
-def create_challenge(body: ChallengeCreate):
+def create_challenge(body: ChallengeCreate, me: int = Depends(current_user_id)):
+    require_self(me, body.challenger_id)
     if body.challenger_id == body.opponent_id:
         raise HTTPException(400, "You can't challenge yourself")
     with get_connection() as connection:
@@ -515,7 +517,8 @@ def create_challenge(body: ChallengeCreate):
 
 
 @router.post("/battles/{battle_id}/accept")
-def accept_challenge(battle_id: int, body: AcceptBody):
+def accept_challenge(battle_id: int, body: AcceptBody, me: int = Depends(current_user_id)):
+    require_self(me, body.user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -549,7 +552,8 @@ def accept_challenge(battle_id: int, body: AcceptBody):
 
 
 @router.post("/battles/{battle_id}/decline")
-def decline_challenge(battle_id: int, body: UserBody):
+def decline_challenge(battle_id: int, body: UserBody, me: int = Depends(current_user_id)):
+    require_self(me, body.user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -565,7 +569,8 @@ def decline_challenge(battle_id: int, body: UserBody):
 
 
 @router.post("/battles/{battle_id}/forfeit")
-def forfeit_battle(battle_id: int, body: UserBody):
+def forfeit_battle(battle_id: int, body: UserBody, me: int = Depends(current_user_id)):
+    require_self(me, body.user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -592,7 +597,8 @@ def _check_turn(battle, connection, user_id, round_number, phase):
 
 
 @router.post("/battles/{battle_id}/pick")
-def pick_card(battle_id: int, body: PickBody):
+def pick_card(battle_id: int, body: PickBody, me: int = Depends(current_user_id)):
+    require_self(me, body.user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -614,7 +620,8 @@ def pick_card(battle_id: int, body: PickBody):
 
 
 @router.post("/battles/{battle_id}/call")
-def call_stat(battle_id: int, body: CallBody):
+def call_stat(battle_id: int, body: CallBody, me: int = Depends(current_user_id)):
+    require_self(me, body.user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -635,7 +642,8 @@ def call_stat(battle_id: int, body: CallBody):
 
 
 @router.get("/battles/{battle_id}")
-def get_battle(battle_id: int, user_id: int):
+def get_battle(battle_id: int, user_id: int, me: int = Depends(current_user_id)):
+    require_self(me, user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
@@ -645,7 +653,8 @@ def get_battle(battle_id: int, user_id: int):
 
 
 @router.get("/users/{user_id}/battles")
-def list_battles(user_id: int):
+def list_battles(user_id: int, me: int = Depends(current_user_id)):
+    require_self(me, user_id)
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(

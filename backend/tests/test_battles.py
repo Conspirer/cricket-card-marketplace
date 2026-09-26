@@ -7,7 +7,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from backend import battles as rules
-from backend.tests.conftest import make_definition, make_player, make_user, mint, run_parallel
+from backend.tests.conftest import acting, make_definition, make_player, make_user, mint, run_parallel
 from backend.themes import STATS, THEMES
 
 THEME_KEYS = list(THEMES)
@@ -218,7 +218,7 @@ def test_simultaneous_final_picks_resolve_once(api, base_url, db, setup):
         db.execute("DELETE FROM battle_rounds; DELETE FROM battle_moves; DELETE FROM battles;")
         battle_id = start_battle(api, s)
         results = run_parallel([
-            lambda u=u: httpx.post(
+            lambda u=u: acting.post(
                 f"{base_url}/battles/{battle_id}/pick",
                 json={"user_id": u, "round": 1, "card_id": s["decks"][u][attempt % 6]},
                 timeout=30,
@@ -240,7 +240,7 @@ def test_simultaneous_calls_resolve_once(api, base_url, db, setup):
         theme = get(api, battle_id, s["alice"])["current"]["theme"]["key"]
         stats = THEMES[theme]["stats"]
         results = run_parallel([
-            lambda u=u, st=st: httpx.post(
+            lambda u=u, st=st: acting.post(
                 f"{base_url}/battles/{battle_id}/call", json={"user_id": u, "round": 1, "stat": st}, timeout=30,
             )
             for u, st in ((s["alice"], stats[0]), (s["bob"], stats[-1]))
@@ -258,7 +258,7 @@ def test_timeouts_resolve_exactly_once(api, base_url, db, setup):
     s = setup
     battle_id = start_battle(api, s)
     polls = lambda: run_parallel([
-        lambda u=u: httpx.get(f"{base_url}/battles/{battle_id}", params={"user_id": u}, timeout=30)
+        lambda u=u: acting.get(f"{base_url}/battles/{battle_id}", params={"user_id": u}, timeout=30)
         for u in [s["alice"], s["bob"]] * 5
     ])
 

@@ -22,7 +22,7 @@ export type ThemeStats = {
 
 export type PlayerThemeStats = { hidden: boolean; themes: ThemeStats[] };
 
-export type User = { id: number; username: string; email: string; balance: string };
+export type User = { id: number; username: string; balance: string };
 
 export type Card = {
   id: number;
@@ -223,6 +223,15 @@ const post = <T>(path: string, body?: unknown) =>
 
 export const api = {
   users: () => request<User[]>("/users"),
+  // The logged-in user, or null when there's no (valid) session.
+  me: () =>
+    request<User>("/auth/me").catch((e) => {
+      if (e instanceof ApiError && e.status === 401) return null;
+      throw e;
+    }),
+  register: (username: string, password: string) => post<User>("/auth/register", { username, password }),
+  login: (username: string, password: string) => post<User>("/auth/login", { username, password }),
+  logout: () => post<{ ok: boolean }>("/auth/logout"),
   packs: () => request<PackType[]>("/packs"),
   openPack: (userId: number, packType: string) =>
     post<PackResult>("/packs/open", { user_id: userId, pack_type: packType }),

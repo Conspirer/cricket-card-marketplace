@@ -3,8 +3,8 @@
     python -m backend.scripts.reset_economy            # shows what would be deleted, changes nothing
     python -m backend.scripts.reset_economy --confirm  # does it
 
-Empties users, card_instances, listings, pack_openings, currency_ledger,
-card_ownership_events and every battle table, and resets
+Empties users (and their login sessions), card_instances, listings,
+pack_openings, currency_ledger, card_ownership_events and every battle table, and resets
 card_definitions.minted_count to 0 so serials start again at #1. Keeps
 players, player_theme_stats, card_definitions (including which are active)
 and schema_migrations. Everything happens in one transaction, then the
@@ -26,7 +26,7 @@ from backend.database import DATABASE_URL, get_connection
 EMPTIED = [
     "battle_rounds", "battle_moves", "battles",
     "card_ownership_events", "currency_ledger", "listings",
-    "card_instances", "pack_openings", "users",
+    "card_instances", "pack_openings", "sessions", "users",
 ]
 KEPT = ["players", "player_theme_stats", "card_definitions", "schema_migrations"]
 

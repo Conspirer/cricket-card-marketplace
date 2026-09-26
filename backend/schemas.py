@@ -7,12 +7,7 @@ from datetime import date, datetime
 class UserResponse(BaseModel):
     id: int
     username: str
-    email: str
     balance: Decimal
-
-class UserCreate(BaseModel):
-    username: str
-    email: str
 
 class PlayerCreate(BaseModel):
     name:str

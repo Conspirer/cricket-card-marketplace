@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session";
 import { runs } from "../format";
 import { BallSeam } from "./CardBack";
+import { AuthPage } from "../pages/AuthPage";
 
 const NAV = [
   { to: "/", label: "Packs" },
@@ -12,7 +13,10 @@ const NAV = [
 ];
 
 export function Layout() {
-  const { user } = useSession();
+  const { user, loading } = useSession();
+  const { pathname } = useLocation();
+  // Everything except the credits page needs an account.
+  const needsLogin = !loading && !user && pathname !== "/credits";
 
   return (
     <div className="min-h-screen">
@@ -23,7 +27,7 @@ export function Layout() {
             <span className="hidden font-display text-2xl font-black tracking-[0.18em] min-[420px]:inline">CREASE</span>
           </NavLink>
 
-          <nav className="flex h-full items-stretch gap-1 sm:gap-2">
+          <nav className={`flex h-full items-stretch gap-1 sm:gap-2 ${user ? "" : "invisible"}`}>
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -49,18 +53,20 @@ export function Layout() {
                 <div className="font-mono text-sm text-brass-bright">{runs(user.balance)} RUNS</div>
               </div>
             )}
-            <UserPicker />
+            {user && <UserMenu />}
           </div>
         </div>
-        {/* Phones: balance and user picker drop to their own row. */}
-        <div className="flex items-center justify-between border-t border-line px-4 py-2 sm:hidden">
-          <span className="font-mono text-xs text-brass-bright">{user ? `${runs(user.balance)} RUNS` : ""}</span>
-          <UserPicker />
-        </div>
+        {/* Phones: balance and account drop to their own row. */}
+        {user && (
+          <div className="flex items-center justify-between border-t border-line px-4 py-2 sm:hidden">
+            <span className="font-mono text-xs text-brass-bright">{runs(user.balance)} RUNS</span>
+            <UserMenu />
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-7xl px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
-        <Outlet />
+        {loading ? null : needsLogin ? <AuthPage /> : <Outlet />}
       </main>
 
       <footer className="border-t border-line">
@@ -73,23 +79,20 @@ export function Layout() {
   );
 }
 
-function UserPicker() {
-  const { user, users, setUserId } = useSession();
+function UserMenu() {
+  const { user, logout } = useSession();
   return (
-    <label className="flex items-center gap-2">
-      <span className="eyebrow hidden !text-[10px] md:inline">Playing as</span>
-      <select
-        value={user?.id ?? ""}
-        onChange={(e) => setUserId(Number(e.target.value))}
-        className="h-9 max-w-[150px] cursor-pointer truncate border border-line-strong bg-surface px-2 font-mono text-xs text-cream outline-none focus:border-brass"
+    <div className="flex items-center gap-3">
+      <span className="max-w-[140px] truncate font-display text-lg font-extrabold tracking-[0.04em] uppercase">
+        {user?.username}
+      </span>
+      <button
+        onClick={() => logout()}
+        className="font-mono text-[11px] tracking-[0.12em] text-faint uppercase hover:text-cream"
       >
-        {users.map((u) => (
-          <option key={u.id} value={u.id}>
-            {u.username}
-          </option>
-        ))}
-      </select>
-    </label>
+        Log out
+      </button>
+    </div>
   );
 }
 
