@@ -94,6 +94,12 @@ class Bot:
             return self.rng.choice(options)
         return max(options, key=lambda c: (self.strength(c, theme), self.rng.random()))
 
+    def pick_for_stat(self, options, theme, stat):
+        """Sudden death: the stat is known before the pick."""
+        if self.level == "random":
+            return self.rng.choice(options)
+        return max(options, key=lambda c: (self.pct.of(theme, stat, self.believed(c, theme, stat)), self.rng.random()))
+
     def call(self, mine, theirs, theme):
         stats = THEMES[theme]["stats"]
         if self.level == "random":
@@ -119,7 +125,8 @@ def random_deck(pool, rng, min_cost=0, max_cost=rules.CREDIT_CAP):
 
 def play(deck_a, deck_b, bot_a, bot_b, rng, log, battles_log=None):
     """One battle; A is the challenger. Returns 1 / -1 / 0 for A win / B win / draw."""
-    themes = rules.draw_themes(rng=rng)
+    themes = rules.draw_themes(rng=rng, rare_allowed=rules.eligible_rare_themes(deck_a, deck_b))
+    sd_stat = rules.draw_sudden_death_stat(themes[rules.MAX_ROUNDS - 1], rng=rng)
     used = {"A": set(), "B": set()}
     points = {"A": 0, "B": 0}
     decks, bots = {"A": deck_a, "B": deck_b}, {"A": bot_a, "B": bot_b}
@@ -127,10 +134,17 @@ def play(deck_a, deck_b, bot_a, bot_b, rng, log, battles_log=None):
     number = 0
     for number in range(1, rules.MAX_ROUNDS + 1):
         theme = themes[number - 1]
-        sudden = rules.is_sudden_death(number)
+        if rules.is_sudden_death(number):
+            # One drawn stat, known before the pick; any deck card may be reused.
+            cards = {side: bots[side].pick_for_stat(decks[side], theme, sd_stat) for side in "AB"}
+            result = rules.sudden_death(theme, sd_stat, cards["A"], cards["B"])["result"]
+            points["A"] += result > 0
+            points["B"] += result < 0
+            log.append({"kind": "sudden_death", "theme": theme, "stat": sd_stat, "result": result})
+            break
         cards = {}
         for side in "AB":
-            options = decks[side] if sudden else [c for c in decks[side] if c["id"] not in used[side]]
+            options = [c for c in decks[side] if c["id"] not in used[side]]
             cards[side] = bots[side].pick(options, theme)
             used[side].add(cards[side]["id"])
         calls = {side: bots[side].call(cards[side], cards["B" if side == "A" else "A"], theme) for side in "AB"}
@@ -150,10 +164,11 @@ def play(deck_a, deck_b, bot_a, bot_b, rng, log, battles_log=None):
         if rules.battle_over(number, points["A"], points["B"]):
             break
 
+    winner, decided_by = rules.outcome(number, points["A"], points["B"])
     if battles_log is not None:
-        battles_log.append({"rounds": number, "sudden_death": number > rules.REGULATION_ROUNDS,
-                            "drawn": points["A"] == points["B"]})
-    return (points["A"] > points["B"]) - (points["A"] < points["B"])
+        battles_log.append({"rounds": number, "sudden_death": rules.is_sudden_death(number),
+                            "drawn": winner is None, "decided_by": decided_by})
+    return {"challenger": 1, "opponent": -1, None: 0}[winner]
 
 
 def matchup(pool, pct, level_a, level_b, n, rng, deck_a=None, deck_b=None):
@@ -179,8 +194,12 @@ CALL_SECONDS_USED = rules.CALL_SECONDS / 2
 
 
 def minutes(rounds):
+    # Regulation rounds have a pick and a call; sudden death is a pick only.
     # The final round ends the battle immediately: no reveal pause after it.
-    return (rounds * (PICK_SECONDS_USED + CALL_SECONDS_USED) + (rounds - 1) * rules.REVEAL_SECONDS) / 60
+    regulation = min(rounds, rules.REGULATION_ROUNDS)
+    sudden = rounds - regulation
+    seconds = regulation * (PICK_SECONDS_USED + CALL_SECONDS_USED) + sudden * PICK_SECONDS_USED
+    return (seconds + (rounds - 1) * rules.REVEAL_SECONDS) / 60
 
 
 def splits(log):
@@ -220,9 +239,14 @@ def main():
         total = sum(c.values())
         sd = sum(b["sudden_death"] for b in battles)
         drawn = sum(b["drawn"] for b in battles)
+        how = Counter(b["decided_by"] for b in battles)
         print(f"   {key[0]} vs {key[1]:<8} rounds 1-1 {pct(c['1-1'], total)}  2-0 {pct(c['2-0'], total)}  "
               f"1-0 {pct(c['1-0'], total)}  0-0 {pct(c['0-0'], total)}   "
               f"sudden death {pct(sd, len(battles))}  drawn {pct(drawn, len(battles))}")
+        sd_log = [r for r in log if r["kind"] == "sudden_death"]
+        sd_draws = sum(r["result"] == 0 for r in sd_log)
+        print(f"   {'':<20} decided in regulation {pct(how['regulation'], len(battles))}  in sudden death {pct(how['sudden_death'], len(battles))}  "
+              f"draw {pct(how['draw'], len(battles))}   (sudden deaths drawn: {pct(sd_draws, len(sd_log)).strip()})")
 
     print("\n3. Per theme (perfect vs perfect): calls that score no point, rounds that end level")
     log, battles = results[("perfect", "perfect")]
@@ -231,7 +255,7 @@ def main():
         if r["kind"] == "call":
             by_theme[r["theme"]]["calls"] += 1
             by_theme[r["theme"]]["no_point"] += r["point"] is None
-        else:
+        elif r["kind"] == "round":
             by_theme[r["theme"]]["rounds"] += 1
             by_theme[r["theme"]]["level"] += r["split"][0] == r["split"][1]
     for theme in THEMES:
@@ -244,7 +268,7 @@ def main():
     mean_rounds = sum(b["rounds"] for b in battles) / len(battles)
     mean_minutes = sum(minutes(b["rounds"]) for b in battles) / len(battles)
     print(f"   mean {mean_rounds:.2f} rounds, {mean_minutes:.1f} min   "
-          f"(6 rounds {minutes(6):.1f} min, 9 rounds {minutes(9):.1f} min)")
+          f"(6 rounds {minutes(6):.1f} min, 7 rounds {minutes(7):.1f} min)")
     print("   rounds played: " + ", ".join(f"{k}: {pct(v, len(battles)).strip()}" for k, v in sorted(lengths.items())))
 
     print("\n5. Upsets: 60-credit deck (all Common tier) vs 95-100-credit deck, both perfect")

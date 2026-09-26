@@ -158,13 +158,16 @@ CREATE TABLE IF NOT EXISTS battles (
     opponent_card_ids       BIGINT[],
     challenger_deck         JSONB,
     opponent_deck           JSONB,
-    themes                  TEXT[],            -- 6 rounds + up to 3 sudden-death rounds
+    themes                  TEXT[],            -- 6 rounds + the sudden-death round
     current_round           INTEGER NOT NULL DEFAULT 0,
     phase                   VARCHAR(10) CONSTRAINT battles_phase_check CHECK (phase IN ('CARD_PICK', 'CALL', 'REVEAL')),
     phase_deadline          TIMESTAMPTZ,
     challenger_points       INTEGER NOT NULL DEFAULT 0,
     opponent_points         INTEGER NOT NULL DEFAULT 0,
     winner_id               BIGINT REFERENCES users(id),   -- NULL when drawn or not finished
+    sudden_death_stat       TEXT,              -- drawn at start, revealed before the sudden-death pick
+    decided_by              TEXT CONSTRAINT battles_decided_by_check
+                                CHECK (decided_by IN ('regulation', 'sudden_death', 'draw')),
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at              TIMESTAMPTZ NOT NULL,
     started_at              TIMESTAMPTZ,

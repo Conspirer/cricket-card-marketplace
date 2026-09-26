@@ -8,11 +8,16 @@ from backend.battle_routes import router as battle_router
 from backend.battles import TIER_ORDER, credits_for_tier
 from psycopg.errors import UniqueViolation
 from decimal import Decimal, ROUND_HALF_UP
+import os
 
-app = FastAPI()
+DEV_FAUCET_ENABLED = os.environ.get("DEV_FAUCET_ENABLED", "").lower() in ("1", "true", "yes")
+
+# The JSON API. It's mounted at /api by the root app (backend/web.py), which
+# also serves the built React app, so the whole site is one origin.
+api = FastAPI(title="Crease API")
 
 # The Vite dev server runs on a different origin, so browsers need CORS headers.
-app.add_middleware(
+api.add_middleware(
     CORSMiddleware,
     # Any local dev origin (localhost or 127.0.0.1, any port).
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -20,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(battle_router)
+api.include_router(battle_router)
 
 SIGNUP_GRANT = Decimal("1000.00")
 MARKET_FEE_RATE = Decimal("0.05")
@@ -137,11 +142,11 @@ def record_card_event(
         ),
     )
 
-@app.get("/health")
+@api.get("/health")
 def health_check():
     return {"status": "ok"}
 
-@app.get("/users", response_model=list[UserResponse])
+@api.get("/users", response_model=list[UserResponse])
 def get_users():
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -155,7 +160,7 @@ def get_users():
             users = cursor.fetchall()
     return users
 
-@app.post("/users", response_model=UserResponse)
+@api.post("/users", response_model=UserResponse)
 def create_user(user: UserCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -176,9 +181,8 @@ def create_user(user: UserCreate):
             created_user["balance"] = updated["balance"]
     return created_user
 
-# Dev-only faucet so users created before the ledger existed can get Runs.
-# Remove (or put behind admin auth) before this is ever public.
-@app.post("/dev/users/{user_id}/grant", response_model=UserResponse)
+# Dev-only faucet: mints Runs from nothing. Off unless DEV_FAUCET_ENABLED is
+# set, and when off the route isn't registered at all (plain 404).
 def dev_grant(user_id: int, grant: GrantCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -203,7 +207,11 @@ def dev_grant(user_id: int, grant: GrantCreate):
             user = cursor.fetchone()
     return user
 
-@app.post("/players", response_model=PlayerResponse)
+
+if DEV_FAUCET_ENABLED:
+    api.post("/dev/users/{user_id}/grant", response_model=UserResponse)(dev_grant)
+
+@api.post("/players", response_model=PlayerResponse)
 def create_player(player:PlayerCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -219,7 +227,7 @@ def create_player(player:PlayerCreate):
             created_player=cursor.fetchone();
     return created_player
 
-@app.get("/players", response_model=list[PlayerResponse])
+@api.get("/players", response_model=list[PlayerResponse])
 def get_players(
     search: str | None = None,
     limit: int = Query(100, ge=1, le=500),
@@ -241,7 +249,7 @@ def get_players(
             players = cursor.fetchall()
     return players;
 
-@app.get("/players/{player_id}", response_model=PlayerDetailResponse)
+@api.get("/players/{player_id}", response_model=PlayerDetailResponse)
 def get_player(player_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -284,7 +292,7 @@ def player_in_active_battle(cursor, player_id):
     return cursor.fetchone()["hidden"]
 
 
-@app.get("/players/{player_id}/theme-stats", response_model=PlayerThemeStatsResponse)
+@api.get("/players/{player_id}/theme-stats", response_model=PlayerThemeStatsResponse)
 def get_player_theme_stats(player_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -325,7 +333,7 @@ def get_player_theme_stats(player_id: int):
     return {"hidden": False, "themes": themes}
 
 
-@app.post("/card-definitions", response_model=CardDefinitionResponse)
+@api.post("/card-definitions", response_model=CardDefinitionResponse)
 def create_card_definition(card: CardDefinitionCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -364,7 +372,7 @@ def create_card_definition(card: CardDefinitionCreate):
     return created_card
 
 
-@app.post("/card-instances", response_model=CardInstanceResponse)
+@api.post("/card-instances", response_model=CardInstanceResponse)
 def create_card_instance(card: CardInstanceCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -415,7 +423,7 @@ def create_card_instance(card: CardInstanceCreate):
 
     return created_card
 
-@app.get(
+@api.get(
     "/card-instances",
     response_model=list[CardInstanceDetailResponse],
 )
@@ -450,7 +458,7 @@ def get_card_instances():
 
     return cards
 
-@app.get(
+@api.get(
     "/card-instances/{card_id}",
     response_model=CardInstanceDetailResponse,
 )
@@ -492,7 +500,7 @@ def get_card_instance(card_id: int):
 
     return card
 
-@app.post("/listings", response_model=ListingResponse)
+@api.post("/listings", response_model=ListingResponse)
 def create_listing(listing:ListingCreate):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -557,7 +565,7 @@ def create_listing(listing:ListingCreate):
         connection.commit()
     return created
 
-@app.post("/listings/{listing_id}/cancel", response_model=ListingResponse)
+@api.post("/listings/{listing_id}/cancel", response_model=ListingResponse)
 def cancel_listing(listing_id: int, seller_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -634,7 +642,7 @@ def cancel_listing(listing_id: int, seller_id: int):
     return cancelled
 
 
-@app.post("/listings/{listing_id}/buy", response_model=ListingResponse)
+@api.post("/listings/{listing_id}/buy", response_model=ListingResponse)
 def buy_listing(listing_id: int, buyer_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -784,7 +792,7 @@ def buy_listing(listing_id: int, buyer_id: int):
 
     return completed_listing
 
-@app.get("/packs")
+@api.get("/packs")
 def get_pack_types():
     return [
         {
@@ -797,7 +805,7 @@ def get_pack_types():
     ]
 
 
-@app.post("/packs/open", response_model=PackOpenResponse)
+@api.post("/packs/open", response_model=PackOpenResponse)
 def open_pack(request: PackOpenRequest):
     config = PACK_TYPES[request.pack_type]
 
@@ -928,7 +936,7 @@ def open_pack(request: PackOpenRequest):
     }
 
 
-@app.get("/card-definitions", response_model=list[CardDefinitionResponse])
+@api.get("/card-definitions", response_model=list[CardDefinitionResponse])
 def get_card_definitions(active: bool | None = None):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -947,7 +955,7 @@ def get_card_definitions(active: bool | None = None):
     return definitions
 
 
-@app.get("/users/{user_id}/cards", response_model=list[CollectionCardResponse])
+@api.get("/users/{user_id}/cards", response_model=list[CollectionCardResponse])
 def get_user_collection(user_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -1009,7 +1017,7 @@ def get_user_collection(user_id: int):
     return cards
 
 
-@app.get("/marketplace", response_model=list[MarketplaceListingResponse])
+@api.get("/marketplace", response_model=list[MarketplaceListingResponse])
 def get_marketplace(
     card_definition_id: int | None = None,
     player_id: int | None = None,
@@ -1066,7 +1074,7 @@ def get_marketplace(
     return listings
 
 
-@app.get("/card-instances/{card_id}/history", response_model=list[CardEventResponse])
+@api.get("/card-instances/{card_id}/history", response_model=list[CardEventResponse])
 def get_card_history(card_id: int):
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -1109,7 +1117,7 @@ def get_card_history(card_id: int):
     return events
 
 
-@app.get(
+@api.get(
     "/card-definitions/{card_definition_id}/price-history",
     response_model=list[SaleResponse],
 )
@@ -1150,3 +1158,8 @@ def get_price_history(card_definition_id: int, limit: int = 50):
             sales = cursor.fetchall()
 
     return sales
+
+
+from backend.web import build_app  # noqa: E402  (needs `api` defined above)
+
+app = build_app(api)

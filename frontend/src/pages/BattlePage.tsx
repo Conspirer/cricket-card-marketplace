@@ -11,8 +11,13 @@ import { useCountdown } from "../useCountdown";
 const PHASE_SECONDS = { CARD_PICK: 30, CALL: 15, REVEAL: 6 } as const;
 const REGULATION_ROUNDS = 6;
 
-const roundLabel = (round: number) =>
-  round > REGULATION_ROUNDS ? `Sudden death ${round - REGULATION_ROUNDS} of 3` : `Round ${round} of 6`;
+const roundLabel = (round: number) => (round > REGULATION_ROUNDS ? "Sudden death" : `Round ${round} of 6`);
+
+const DECIDED_BY: Record<string, string> = {
+  regulation: "Won in regulation",
+  sudden_death: "Won in sudden death",
+  draw: "Drawn: level after sudden death",
+};
 
 const face = (c: BattleCard): CardFace => ({
   player_name: c.name,
@@ -73,7 +78,12 @@ export function BattlePage() {
 
       {view.status === "ACTIVE" && view.current && (
         <>
-          <ThemeBanner theme={view.current.theme} round={view.current.round} suddenDeath={view.current.sudden_death} />
+          <ThemeBanner
+            theme={view.current.theme}
+            round={view.current.round}
+            suddenDeath={view.current.sudden_death}
+            stat={view.current.sudden_death_stat}
+          />
           <PhaseTimer view={view} fetchedAt={dataUpdatedAt} />
           {view.phase === "CARD_PICK" ? (
             <PickPhase view={view} onPick={(c) => pick.mutate(c)} busy={pick.isPending} />
@@ -123,7 +133,7 @@ function ScoreBar({ view, onForfeit }: { view: BattleView; onForfeit: () => void
                 : "border-line-strong bg-line text-mute"
               }`}
             >
-              {r ? `${r.points.you}-${r.points.them}` : i >= REGULATION_ROUNDS ? `SD${i - REGULATION_ROUNDS + 1}` : i + 1}
+              {r ? `${r.points.you}-${r.points.them}` : i >= REGULATION_ROUNDS ? "SD" : i + 1}
             </li>
           ))}
         </ol>
@@ -137,7 +147,12 @@ function ScoreBar({ view, onForfeit }: { view: BattleView; onForfeit: () => void
   );
 }
 
-function ThemeBanner({ theme, round, suddenDeath }: { theme: ThemeMeta; round: number; suddenDeath: boolean }) {
+function ThemeBanner({ theme, round, suddenDeath, stat }: {
+  theme: ThemeMeta;
+  round: number;
+  suddenDeath: boolean;
+  stat?: { label: string; lower_wins: boolean } | null;
+}) {
   const rare = theme.tier === "rare";
   return (
     <motion.div
@@ -153,6 +168,13 @@ function ThemeBanner({ theme, round, suddenDeath }: { theme: ThemeMeta; round: n
         </h1>
         {rare && <span className="font-mono text-[11px] tracking-[0.2em] text-brass-bright uppercase">Rare theme</span>}
       </div>
+      {suddenDeath && stat && (
+        <div className="mt-4 flex flex-wrap items-baseline gap-3 border-t border-line pt-4">
+          <span className="eyebrow">Decided on</span>
+          <span className="font-display text-3xl leading-none font-black text-brass-bright uppercase">{stat.label}</span>
+          <span className="font-mono text-[11px] text-faint">{stat.lower_wins ? "lower wins" : "higher wins"} · one comparison, winner takes the battle</span>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -192,8 +214,17 @@ function PickPhase({ view, onPick, busy }: { view: BattleView; onPick: (id: numb
   return (
     <div>
       <p className="mb-4 text-mute">
-        Pick the card you think is strongest in <span className="text-cream">{current.theme.label}</span>. After both cards
-        are shown, you both call a stat.
+        {current.sudden_death_stat ? (
+          <>
+            Pick the card with the best <span className="text-cream">{current.sudden_death_stat.label}</span> in{" "}
+            <span className="text-cream">{current.theme.label}</span>. Any card from your deck, including ones already played.
+          </>
+        ) : (
+          <>
+            Pick the card you think is strongest in <span className="text-cream">{current.theme.label}</span>. After both
+            cards are shown, you both call a stat.
+          </>
+        )}
       </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {view.hand.map((card) => {
@@ -292,7 +323,7 @@ function FlipNumber({ value, stat, delay, tone }: { value: number | null; stat: 
 
 function CallLine({ call, who, opponent, stats, delay }: {
   call: BattleCall;
-  who: "you" | "them";
+  who: "you" | "them" | "sudden";
   opponent: string;
   stats: ThemeMeta["stats"];
   delay: number;
@@ -300,12 +331,17 @@ function CallLine({ call, who, opponent, stats, delay }: {
   const meta = stats.find((s) => s.key === call.stat);
   const tone = (side: "you" | "them") => (call.point === side ? "win" : call.point ? "lose" : "draw");
   const verdict =
-    call.point === null ? "No point" : call.point === "you" ? "Point to you" : `Point to ${opponent}`;
-  const backfired = call.point !== null && call.point !== who;
+    who === "sudden"
+      ? call.point === null ? "Drawn" : call.point === "you" ? "You take it" : `${opponent} takes it`
+      : call.point === null ? "No point" : call.point === "you" ? "Point to you" : `Point to ${opponent}`;
+  const backfired = who !== "sudden" && call.point !== null && call.point !== who;
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2 border-t border-line py-4 first:border-t-0 sm:grid-cols-[180px_1fr_170px]">
       <div>
-        <div className="eyebrow">{who === "you" ? "Your call" : `${opponent}'s call`}{call.timed_out ? " · timed out" : ""}</div>
+        <div className="eyebrow">
+          {who === "sudden" ? "Sudden-death stat" : who === "you" ? "Your call" : `${opponent}'s call`}
+          {call.timed_out ? " · timed out" : ""}
+        </div>
         <div className="mt-1 font-display text-2xl leading-none font-black uppercase">{meta?.label ?? STAT_LABELS[call.stat]}</div>
         <div className="mt-1 font-mono text-[10px] text-faint">{meta?.lower_wins ? "lower wins" : "higher wins"}</div>
       </div>
@@ -348,8 +384,14 @@ function RevealPanel({ round, opponent, animate }: { round: BattleRound; opponen
       </div>
 
       <div className="mt-8 border border-line bg-surface px-5">
-        <CallLine call={round.your_call} who="you" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.2 : -1} />
-        <CallLine call={round.their_call} who="them" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.8 : -1} />
+        {round.sudden_death_call ? (
+          <CallLine call={{ ...round.sudden_death_call, timed_out: false }} who="sudden" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.2 : -1} />
+        ) : (
+          <>
+            <CallLine call={round.your_call!} who="you" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.2 : -1} />
+            <CallLine call={round.their_call!} who="them" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.8 : -1} />
+          </>
+        )}
       </div>
       <FullStats round={round} opponent={opponent} />
     </div>
@@ -371,14 +413,16 @@ function FullStats({ round, opponent }: { round: BattleRound; opponent: string }
         </thead>
         <tbody>
           {round.theme.stats.map((s) => {
-            const called = [round.your_call.stat === s.key && "you", round.their_call.stat === s.key && "them"].filter(Boolean);
+            const called = round.sudden_death_call
+              ? (round.sudden_death_call.stat === s.key ? ["you", "them"] : [])
+              : [round.your_call?.stat === s.key && "you", round.their_call?.stat === s.key && "them"].filter(Boolean);
             return (
             <tr key={s.key} className={`border-b border-line last:border-0 ${called.length ? "bg-brass/10" : ""}`}>
               <td className="px-4 py-2">
                 {s.label}
                 {called.length > 0 && (
                   <span className="ml-2 font-mono text-[10px] text-brass-bright uppercase">
-                    called by {called.length === 2 ? "both" : called[0] === "you" ? "you" : opponent}
+                    {round.sudden_death_call ? "sudden-death stat" : `called by ${called.length === 2 ? "both" : called[0] === "you" ? "you" : opponent}`}
                   </span>
                 )}
               </td>
@@ -402,11 +446,11 @@ function ResultScreen({ view }: { view: BattleView }) {
         animate={{ opacity: 1, scale: 1 }}
         className={`mb-10 border px-6 py-8 text-center ${view.winner === "you" ? "border-brass bg-brass/10" : "border-line bg-surface"}`}
       >
-        <div className="eyebrow">{view.status === "FORFEIT" ? "Ended by forfeit" : "Final"}</div>
+        <div className="eyebrow">{view.status === "FORFEIT" ? "Ended by forfeit" : view.decided_by ? DECIDED_BY[view.decided_by] : "Final"}</div>
         <h1 className="mt-2 font-display text-7xl leading-none font-black uppercase">{title}</h1>
         <p className="mt-3 font-mono text-sm text-mute">
           {view.score.you}–{view.score.them} points
-          {view.rounds.length > REGULATION_ROUNDS ? ` · ${view.rounds.length - REGULATION_ROUNDS} sudden-death round${view.rounds.length > REGULATION_ROUNDS + 1 ? "s" : ""}` : ""}
+          {view.rounds.length > REGULATION_ROUNDS ? " · after sudden death" : ""}
         </p>
         <Link to="/battles" className="btn btn-ghost mt-6">Back to battles</Link>
       </motion.div>

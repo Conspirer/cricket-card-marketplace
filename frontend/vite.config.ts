@@ -5,13 +5,10 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // The browser only ever talks to Vite; /api/* is forwarded to FastAPI.
-    // Same origin means no CORS, whatever host/port the app is opened on.
+    // The browser only ever talks to Vite; /api/* is forwarded to FastAPI,
+    // which serves the API under /api (as in production). Same origin, no CORS.
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
+      '/api': { target: 'http://localhost:8000' },
     },
   },
 })

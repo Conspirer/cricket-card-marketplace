@@ -149,7 +149,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Row({ b, action }: { b: BattleSummary; action: ReactNode }) {
   const outcome =
     b.status === "PENDING" ? <Expires at={b.expires_at} />
-    : b.status === "ACTIVE" ? `${b.current_round > 6 ? `Sudden death ${b.current_round - 6}` : `Round ${b.current_round}`} · ${b.score.you}–${b.score.them} pts`
+    : b.status === "ACTIVE" ? `${b.current_round > 6 ? "Sudden death" : `Round ${b.current_round}`} · ${b.score.you}–${b.score.them} pts`
     : `${b.winner === "you" ? "Won" : b.winner === "them" ? "Lost" : "Drawn"} ${b.score.you}–${b.score.them} pts${b.status === "FORFEIT" ? " (forfeit)" : ""}`;
   const tone = b.winner === "you" ? "text-pitch" : b.winner === "them" ? "text-leather" : "text-mute";
   return (

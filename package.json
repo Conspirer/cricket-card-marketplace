@@ -1,0 +1,11 @@
+{
+  "name": "crease",
+  "private": true,
+  "description": "Heroku Node buildpack entry point: builds the React app in frontend/ so FastAPI can serve it.",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "heroku-postbuild": "npm --prefix frontend ci --include=dev && npm --prefix frontend run build"
+  }
+}

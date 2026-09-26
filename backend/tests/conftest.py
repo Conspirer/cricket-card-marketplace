@@ -20,6 +20,8 @@ TEST_DB_URL = os.environ.get(
 )
 # Must be set before backend.database is imported: the pool reads it once.
 os.environ["DATABASE_URL"] = TEST_DB_URL
+# Tests top up balances through the dev faucet, which is off by default.
+os.environ["DEV_FAUCET_ENABLED"] = "1"
 
 SCHEMA = Path(__file__).resolve().parents[1] / "schema.sql"
 
@@ -56,7 +58,7 @@ def base_url():
         if time.time() > deadline:
             raise RuntimeError("test server did not start")
         time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
+    yield f"http://127.0.0.1:{port}/api"
     server.should_exit = True
     thread.join(timeout=5)
 

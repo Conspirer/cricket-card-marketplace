@@ -81,8 +81,9 @@ export type BattleRound = {
   theme: ThemeMeta;
   your_card: BattleCard;
   their_card: BattleCard;
-  your_call: BattleCall;
-  their_call: BattleCall;
+  your_call: BattleCall | null;  // null in sudden death
+  their_call: BattleCall | null;
+  sudden_death_call: Omit<BattleCall, "timed_out"> | null; // the one drawn-stat comparison
   points: { you: number; them: number };
   your_pick_timed_out: boolean;
   their_pick_timed_out: boolean;
@@ -104,6 +105,7 @@ export type BattleView = {
   phase_deadline: string | null;
   score: { you: number; them: number };
   winner: Who | null;
+  decided_by: "regulation" | "sudden_death" | "draw" | null; // null while playing or after a forfeit
   hand: (BattleCard & { used: boolean })[];
   current: {
     round: number;
@@ -114,6 +116,7 @@ export type BattleView = {
     their_pick: BattleCard | null;
     your_call: StatKey | null;
     their_call_made: boolean; // never which stat, until both are in
+    sudden_death_stat: { key: StatKey; label: string; lower_wins: boolean } | null; // shown before the pick
   } | null;
   rounds: BattleRound[];
 };

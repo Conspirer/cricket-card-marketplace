@@ -76,10 +76,24 @@ def expire_phase(db, battle_id, seconds_ago=1):
     )
 
 
-def play_round(api, db, s, battle_id, round_number, bad_call_by=None):
-    """Both pick their next card; each calls a stat their own card wins, unless
-    bad_call_by names a player, who then calls a stat the opponent's card wins."""
+def null_stat_in_decks(db, battle_id, stat):
+    """Make `stat` no data for every card in both frozen decks (so calling it scores nothing)."""
+    row = db.execute("SELECT challenger_deck, opponent_deck FROM battles WHERE id = %s", (battle_id,)).fetchone()
+    for key in ("challenger_deck", "opponent_deck"):
+        for card in row[key]:
+            for theme_stats in card["stats"].values():
+                if stat in theme_stats:
+                    theme_stats[stat] = None
+    db.execute("UPDATE battles SET challenger_deck = %s, opponent_deck = %s WHERE id = %s",
+               (Jsonb(row["challenger_deck"]), Jsonb(row["opponent_deck"]), battle_id))
+
+
+def play_round(api, db, s, battle_id, round_number, calls=None):
+    """Both pick their next card, then each calls according to `calls`:
+    "own" = a stat their card wins (default), "bad" = a stat the opponent's
+    card wins, "none" = catches (no data after null_stat_in_decks)."""
     alice, bob = s["alice"], s["bob"]
+    calls = calls or {}
     picks = {}
     for user in (alice, bob):
         hand = get(api, battle_id, user)["hand"]
@@ -96,7 +110,9 @@ def play_round(api, db, s, battle_id, round_number, bad_call_by=None):
     last = None
     for user in (alice, bob):
         me, them = s["index_of"][picks[user]], s["index_of"][picks[other[user]]]
-        stat = stat_won_by(theme, them, me) if user == bad_call_by else stat_won_by(theme, me, them)
+        kind = calls.get(user, "own")
+        stat = {"own": lambda: stat_won_by(theme, me, them), "bad": lambda: stat_won_by(theme, them, me),
+                "none": lambda: "catches"}[kind]()
         last = api.post(f"/battles/{battle_id}/call", json={"user_id": user, "round": round_number, "stat": stat})
         assert last.status_code == 200, last.text
     body = last.json()
@@ -108,37 +124,85 @@ def play_round(api, db, s, battle_id, round_number, bad_call_by=None):
 
 # ---------------------------------------------------------------------------
 
-def test_regulation_tie_then_sudden_death_decides(api, db, setup):
-    s = setup
+def reach_sudden_death(api, db, s):
     battle_id = start_battle(api, s)
     for round_number in range(1, 7):
         body = play_round(api, db, s, battle_id, round_number)
         assert body["rounds"][-1]["points"] == {"you": 1, "them": 1}  # each call won by its caller
-    assert get(api, battle_id, s["alice"])["score"] == {"you": 6, "them": 6}
+        # The sudden-death stat stays hidden until sudden death starts.
+        if body["current"]:
+            assert body["current"]["sudden_death_stat"] is None
+    view = get(api, battle_id, s["alice"])
+    assert view["score"] == {"you": 6, "them": 6}
+    assert view["current"]["round"] == 7 and view["current"]["sudden_death"] and view["phase"] == "CARD_PICK"
+    return battle_id, view
 
-    # Sudden death: Bob calls a stat Alice's card wins, handing her both points.
-    final = play_round(api, db, s, battle_id, 7, bad_call_by=s["bob"])
+
+def test_sudden_death_decided_by_the_drawn_stat(api, db, setup):
+    s = setup
+    battle_id, view = reach_sudden_death(api, db, s)
+    theme = view["current"]["theme"]["key"]
+    stat = view["current"]["sudden_death_stat"]["key"]  # revealed before the pick
+    assert stat in THEMES[theme]["stats"]
+    assert stat == db.execute("SELECT sudden_death_stat FROM battles WHERE id = %s", (battle_id,)).fetchone()["sudden_death_stat"]
+
+    # Any card may be reused: both play the card they used in round 1.
+    alice_card, bob_card = s["decks"][s["alice"]][0], s["decks"][s["bob"]][0]
+    api.post(f"/battles/{battle_id}/pick", json={"user_id": s["alice"], "round": 7, "card_id": alice_card})
+    final = api.post(f"/battles/{battle_id}/pick", json={"user_id": s["bob"], "round": 7, "card_id": bob_card}).json()
+
+    # No call phase: the second pick settles it.
     assert final["status"] == "FINISHED"
-    assert final["rounds"][-1]["sudden_death"] is True
-    assert final["rounds"][-1]["points"] == {"you": 0, "them": 2}  # Bob's view: 0, Alice 2
+    expected = rules.compare(stat, secret(s["index_of"][alice_card], theme, stat), secret(s["index_of"][bob_card], theme, stat))
+    assert expected != 0
     alice_view = get(api, battle_id, s["alice"])
-    assert alice_view["score"] == {"you": 8, "them": 6}
-    assert alice_view["winner"] == "you"
-    assert len(alice_view["rounds"]) == 7
+    assert alice_view["decided_by"] == "sudden_death"
+    assert alice_view["winner"] == ("you" if expected > 0 else "them")
+    assert alice_view["score"] == ({"you": 7, "them": 6} if expected > 0 else {"you": 6, "them": 7})
+    sd = alice_view["rounds"][-1]
+    assert sd["sudden_death"] and sd["your_call"] is None and sd["their_call"] is None
+    assert sd["sudden_death_call"]["stat"] == stat
+    assert sd["sudden_death_call"]["your_value"] == secret(s["index_of"][alice_card], theme, stat)
 
 
-def test_three_sudden_deaths_then_draw(api, db, setup):
+def test_sudden_death_no_data_both_sides_is_a_draw(api, db, setup):
+    s = setup
+    battle_id, view = reach_sudden_death(api, db, s)
+    null_stat_in_decks(db, battle_id, view["current"]["sudden_death_stat"]["key"])
+    for user in (s["alice"], s["bob"]):
+        r = api.post(f"/battles/{battle_id}/pick", json={"user_id": user, "round": 7, "card_id": s["decks"][user][2]})
+        assert r.status_code == 200, r.text
+    final = get(api, battle_id, s["alice"])
+    assert final["status"] == "FINISHED"
+    assert (final["winner"], final["decided_by"]) == (None, "draw")
+    assert final["score"] == {"you": 6, "them": 6}
+
+
+def test_regulation_win_is_decided_in_regulation(api, db, setup):
     s = setup
     battle_id = start_battle(api, s)
-    for round_number in range(1, rules.MAX_ROUNDS + 1):
+    play_round(api, db, s, battle_id, 1, calls={s["bob"]: "bad"})  # 2-0 Alice
+    for round_number in range(2, 7):
         body = play_round(api, db, s, battle_id, round_number)
     assert body["status"] == "FINISHED"
     view = get(api, battle_id, s["alice"])
-    assert view["winner"] is None
-    assert view["score"] == {"you": 9, "them": 9}
-    assert [r["round"] for r in view["rounds"]] == list(range(1, 10))
-    # Sudden death may reuse any card.
-    assert db.execute("SELECT count(*) AS n FROM battle_moves WHERE battle_id = %s", (battle_id,)).fetchone()["n"] == 18
+    assert (view["winner"], view["decided_by"], view["score"]) == ("you", "regulation", {"you": 7, "them": 5})
+    assert len(view["rounds"]) == 6
+
+
+def test_rare_themes_skipped_when_decks_lack_data(api, db, setup):
+    s = setup
+    rare = [k for k, c in THEMES.items() if c["tier"] == "rare"]
+    for theme in rare:
+        db.execute(
+            "UPDATE player_theme_stats SET stats = %s WHERE theme = %s",
+            (Jsonb({st: None for st in THEMES[theme]["stats"]}), theme),
+        )
+    for _ in range(25):
+        battle_id = start_battle(api, s)
+        themes = db.execute("SELECT themes FROM battles WHERE id = %s", (battle_id,)).fetchone()["themes"]
+        assert len(themes) == rules.MAX_ROUNDS
+        assert not set(themes) & set(rare), themes
 
 
 def pick_both(api, s, battle_id, round_number=1, offset=0):
@@ -387,10 +451,34 @@ def test_each_call_scores_separately():
 def test_battle_end_conditions():
     assert not rules.battle_over(5, 7, 3)          # regulation always runs 6 rounds
     assert rules.battle_over(6, 7, 5)
-    assert not rules.battle_over(6, 6, 6)          # tied: sudden death
+    assert not rules.battle_over(6, 6, 6)          # tied: one sudden-death round
     assert rules.battle_over(7, 8, 7)
-    assert not rules.battle_over(8, 8, 8)
-    assert rules.battle_over(9, 9, 9)               # three sudden deaths, still level: draw
+    assert rules.battle_over(7, 7, 7)              # still tied: countback decides
+
+
+def test_outcome_and_sudden_death():
+    assert rules.outcome(6, 7, 5) == ("challenger", "regulation")
+    assert rules.outcome(7, 6, 7) == ("opponent", "sudden_death")
+    assert rules.outcome(7, 6, 6) == (None, "draw")
+    a = {"stats": {"ODI": {"economy": 4.9, "runs": 900}}}
+    b = {"stats": {"ODI": {"economy": 5.4, "runs": 900}}}
+    assert rules.sudden_death("ODI", "economy", a, b)["result"] == 1   # lower wins
+    assert rules.sudden_death("ODI", "runs", a, b)["result"] == 0      # exact tie: draw
+    assert rules.sudden_death("ODI", "wickets", a, b)["result"] == 0   # no data both sides: draw
+
+
+def test_rare_theme_eligibility():
+    rich = [{"stats": {"ODI_WC": {"runs": 100}, "CT": {"runs": 50}}} for _ in range(3)]
+    poor = [{"stats": {"ODI_WC": {"runs": 100}, "CT": {"runs": None}}}, {"stats": {}}]
+    assert rules.eligible_rare_themes(rich, rich) == {"ODI_WC", "CT"}
+    assert rules.eligible_rare_themes(rich, poor) == set()   # poor has only 1 ODI_WC card
+    rare = {k for k, c in THEMES.items() if c["tier"] == "rare"}
+    import random
+    rng = random.Random(3)
+    drawn = [t for _ in range(300) for t in rules.draw_themes(rng=rng, rare_allowed=set())]
+    assert not set(drawn) & rare
+    drawn = [t for _ in range(300) for t in rules.draw_themes(rng=rng, rare_allowed=rare)]
+    assert set(drawn) & rare
 
 
 def test_theme_draws_never_repeat_back_to_back():

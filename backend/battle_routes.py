@@ -191,14 +191,16 @@ class Battle:
         self.start_phase("CARD_PICK", rules.CARD_PICK_SECONDS, base)
 
     def finish(self, at, status="FINISHED", winner_id=None):
-        self.b["status"] = status
-        self.b["phase"] = None
-        self.b["phase_deadline"] = None
-        self.b["finished_at"] = at
-        if status == "FINISHED":
-            outcome = rules.battle_winner(self.b["challenger_points"], self.b["opponent_points"])
-            winner_id = {"challenger": self.b["challenger_id"], "opponent": self.b["opponent_id"]}.get(outcome)
-        self.b["winner_id"] = winner_id
+        b = self.b
+        b["status"] = status
+        b["phase"] = None
+        b["phase_deadline"] = None
+        b["finished_at"] = at
+        if status == "FORFEIT":
+            b["winner_id"], b["decided_by"] = winner_id, None
+            return
+        outcome, b["decided_by"] = rules.outcome(b["current_round"], b["challenger_points"], b["opponent_points"])
+        b["winner_id"] = {"challenger": b["challenger_id"], "opponent": b["opponent_id"]}.get(outcome)
 
     # -- transitions -------------------------------------------------------
 
@@ -219,6 +221,47 @@ class Battle:
             """,
             (stat, timed_out, self.b["id"], self.b["current_round"], user_id),
         )
+
+    def after_picks(self, base):
+        # Sudden death has no calls: its stat was drawn and shown before the pick.
+        if rules.is_sudden_death(self.b["current_round"]):
+            self.resolve_sudden_death(base)
+        else:
+            self.start_phase("CALL", rules.CALL_SECONDS, base)
+
+    def resolve_sudden_death(self, base):
+        b = self.b
+        theme, stat = self.theme(), b["sudden_death_stat"]
+        moves = self.moves()
+        c_move, o_move = moves[b["challenger_id"]], moves[b["opponent_id"]]
+        sd = rules.sudden_death(
+            theme, stat,
+            self.card(b["challenger_id"], c_move["card_id"]), self.card(b["opponent_id"], o_move["card_id"]),
+        )
+        c_point, o_point = int(sd["result"] > 0), int(sd["result"] < 0)
+        b["challenger_points"] += c_point
+        b["opponent_points"] += o_point
+        # One comparison, recorded in both call slots so the row shape stays uniform.
+        self.cursor.execute(
+            """
+            INSERT INTO battle_rounds (
+                battle_id, round, theme, challenger_card_id, opponent_card_id,
+                challenger_stat, challenger_call_challenger_value, challenger_call_opponent_value,
+                opponent_stat, opponent_call_challenger_value, opponent_call_opponent_value,
+                challenger_points, opponent_points,
+                challenger_pick_timed_out, opponent_pick_timed_out,
+                challenger_call_timed_out, opponent_call_timed_out
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false, false);
+            """,
+            (
+                b["id"], b["current_round"], theme, c_move["card_id"], o_move["card_id"],
+                stat, sd["challenger_value"], sd["opponent_value"],
+                stat, sd["challenger_value"], sd["opponent_value"],
+                c_point, o_point, c_move["pick_timed_out"], o_move["pick_timed_out"],
+            ),
+        )
+        self.finish(base)
 
     def resolve_round(self, base):
         b = self.b
@@ -278,7 +321,7 @@ class Battle:
                 for user_id in self.players():
                     if user_id not in moves:
                         self.record_pick(user_id, rules._rng.choice(self.playable(user_id)), timed_out=True)
-                self.start_phase("CALL", rules.CALL_SECONDS, deadline)
+                self.after_picks(deadline)
             elif b["phase"] == "CALL":
                 moves = self.moves()
                 for user_id in self.players():
@@ -296,7 +339,7 @@ class Battle:
                 status = %s, opponent_card_ids = %s, challenger_deck = %s, opponent_deck = %s,
                 themes = %s, current_round = %s, phase = %s, phase_deadline = %s,
                 challenger_points = %s, opponent_points = %s,
-                winner_id = %s, started_at = %s, finished_at = %s
+                winner_id = %s, decided_by = %s, sudden_death_stat = %s, started_at = %s, finished_at = %s
             WHERE id = %s;
             """,
             (
@@ -305,7 +348,7 @@ class Battle:
                 Jsonb(b["opponent_deck"]) if b["opponent_deck"] is not None else None,
                 b["themes"], b["current_round"], b["phase"], b["phase_deadline"],
                 b["challenger_points"], b["opponent_points"],
-                b["winner_id"], b["started_at"], b["finished_at"], b["id"],
+                b["winner_id"], b["decided_by"], b["sudden_death_stat"], b["started_at"], b["finished_at"], b["id"],
             ),
         )
 
@@ -361,6 +404,7 @@ def view(battle, viewer_id):
         "phase_deadline": b["phase_deadline"],
         "score": {"you": b[f"{me}_points"], "them": b[f"{them}_points"]},
         "winner": who(b["winner_id"]),
+        "decided_by": b["decided_by"],
         "hand": [],
         "current": None,
         "rounds": [],
@@ -403,8 +447,11 @@ def view(battle, viewer_id):
             "theme": theme_meta(theme),
             "your_card": public_card(my_card),
             "their_card": public_card(their_card),
-            "your_call": call_view(r, me),
-            "their_call": call_view(r, them),
+            # Sudden death is one comparison on the drawn stat, not two calls.
+            "your_call": None if rules.is_sudden_death(r["round"]) else call_view(r, me),
+            "their_call": None if rules.is_sudden_death(r["round"]) else call_view(r, them),
+            "sudden_death_call": {k: v for k, v in call_view(r, me).items() if k != "timed_out"}
+                if rules.is_sudden_death(r["round"]) else None,
             "points": {"you": r[f"{me}_points"], "them": r[f"{them}_points"]},
             "your_pick_timed_out": r[f"{me}_pick_timed_out"],
             "their_pick_timed_out": r[f"{them}_pick_timed_out"],
@@ -431,6 +478,12 @@ def view(battle, viewer_id):
             # round resolves; only whether they have called.
             "your_call": mine["stat"] if mine else None,
             "their_call_made": bool(theirs and theirs["stat"]),
+            # Revealed before the sudden-death pick, by design.
+            "sudden_death_stat": (
+                {"key": b["sudden_death_stat"], "label": STATS[b["sudden_death_stat"]]["label"],
+                 "lower_wins": STATS[b["sudden_death_stat"]]["lower_wins"]}
+                if rules.is_sudden_death(b["current_round"]) else None
+            ),
         }
     return out
 
@@ -484,9 +537,12 @@ def accept_challenge(battle_id: int, body: AcceptBody):
                 opponent_card_ids=body.card_ids,
                 challenger_deck=challenger_deck,
                 opponent_deck=opponent_deck,
-                themes=rules.draw_themes(),
+                # Rare themes only when both decks have enough cards with data for them.
+                themes=rules.draw_themes(rare_allowed=rules.eligible_rare_themes(challenger_deck, opponent_deck)),
                 started_at=battle.now,
             )
+            # Drawn now, shown only when sudden death starts.
+            b["sudden_death_stat"] = rules.draw_sudden_death_stat(b["themes"][rules.MAX_ROUNDS - 1])
             battle.begin_round(1, battle.now)
             battle.save()
             return view(battle, body.user_id)
@@ -552,7 +608,7 @@ def pick_card(battle_id: int, body: PickBody):
 
             battle.record_pick(body.user_id, body.card_id)
             if len(battle.moves()) == 2:
-                battle.start_phase("CALL", rules.CALL_SECONDS, battle.now)
+                battle.after_picks(battle.now)
             battle.save()
             return view(battle, body.user_id)
 

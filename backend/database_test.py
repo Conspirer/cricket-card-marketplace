@@ -1,12 +1,8 @@
+import os
+
 import psycopg
 
-connection = psycopg.connect(
-    host="localhost",
-    port=5432,
-    dbname="cricket_marketplace",
-    user="cricket",
-    password="cricket_dev_password",
-)
+connection = psycopg.connect(os.environ["DATABASE_URL"])
 
 cursor = connection.cursor()
 cursor.execute("SELECT 1")
