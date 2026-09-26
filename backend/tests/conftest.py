@@ -38,6 +38,7 @@ def _recreate_database():
 _recreate_database()
 
 import uvicorn  # noqa: E402
+from backend.audit import check_invariants  # noqa: E402
 from backend.main import app  # noqa: E402
 
 
@@ -85,52 +86,8 @@ def clean_and_check(db):
 
 
 def assert_invariants(db):
-    ledger = db.execute(
-        """
-        SELECT u.id, u.balance, COALESCE(SUM(l.delta), 0) AS total
-        FROM users u LEFT JOIN currency_ledger l ON l.user_id = u.id
-        GROUP BY u.id HAVING u.balance <> COALESCE(SUM(l.delta), 0)
-        """
-    ).fetchall()
-    assert not ledger, f"ledger sum != balance: {ledger}"
-
-    owners = db.execute(
-        """
-        SELECT i.id, i.owner_id, last.to_user_id
-        FROM card_instances i
-        LEFT JOIN LATERAL (
-            SELECT to_user_id FROM card_ownership_events e
-            WHERE e.card_instance_id = i.id AND e.event_type IN ('MINTED', 'PULLED', 'SOLD')
-            ORDER BY e.created_at DESC, e.id DESC LIMIT 1
-        ) last ON true
-        WHERE i.owner_id IS DISTINCT FROM last.to_user_id
-        """
-    ).fetchall()
-    assert not owners, f"owner != latest event: {owners}"
-
-    serials = db.execute(
-        """
-        SELECT d.id, d.minted_count, count(i.id) AS n, count(DISTINCT i.serial_number) AS distinct_serials,
-               COALESCE(max(i.serial_number), 0) AS max_serial
-        FROM card_definitions d LEFT JOIN card_instances i ON i.card_definition_id = d.id
-        GROUP BY d.id
-        HAVING NOT (d.minted_count = count(i.id)
-                    AND count(i.id) = count(DISTINCT i.serial_number)
-                    AND COALESCE(max(i.serial_number), 0) = d.minted_count)
-        """
-    ).fetchall()
-    assert not serials, f"serials not unique and gap-free: {serials}"
-
-    transfers = db.execute(
-        """
-        SELECT c.related_listing_id
-        FROM currency_ledger c
-        LEFT JOIN currency_ledger d
-            ON d.related_listing_id = c.related_listing_id AND d.reason = 'TRANSFER_PURCHASE_DEBIT'
-        WHERE c.reason = 'TRANSFER_SALE_CREDIT' AND (d.id IS NULL OR d.delta <> -c.delta)
-        """
-    ).fetchall()
-    assert not transfers, f"unmatched transfer pairs: {transfers}"
+    failures = check_invariants(db)
+    assert not failures, f"invariants broken: {failures}"
 
 
 # ---------------------------------------------------------------------------

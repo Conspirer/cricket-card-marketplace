@@ -3,8 +3,12 @@ origin (no CORS). Production guards are switched on by environment variables:
 
   SITE_PASSWORD   if set, the whole site sits behind HTTP basic auth (any
                   username, this password). Unset = open, e.g. for local dev.
-  DYNO            set by Heroku; turns on the HTTP -> HTTPS redirect so the
-                  basic-auth password never travels in the clear.
+  FORCE_HTTPS     on unless "0": requests a proxy reports as plain HTTP
+                  (X-Forwarded-Proto: http, as Render's does) are redirected
+                  to HTTPS, so the password never travels in the clear.
+                  Direct local requests carry no such header and pass.
+
+/healthz is always open and returns only "ok", for the host's health check.
 """
 
 import base64
@@ -29,6 +33,8 @@ class SharedPasswordGate(BaseHTTPMiddleware):
         self.password = password.encode()
 
     async def dispatch(self, request, call_next):
+        if request.url.path == "/healthz":
+            return await call_next(request)
         header = request.headers.get("authorization", "")
         if header.startswith("Basic "):
             try:
@@ -45,7 +51,7 @@ class SharedPasswordGate(BaseHTTPMiddleware):
 
 
 class HttpsRedirect(BaseHTTPMiddleware):
-    """Heroku's router terminates TLS and reports the scheme in X-Forwarded-Proto."""
+    """The hosting proxy terminates TLS and reports the original scheme in X-Forwarded-Proto."""
 
     async def dispatch(self, request, call_next):
         if request.headers.get("x-forwarded-proto") == "http":
@@ -55,7 +61,7 @@ class HttpsRedirect(BaseHTTPMiddleware):
 
 def build_app(api, password=None, dist=FRONTEND_DIST, force_https=None):
     password = os.environ.get("SITE_PASSWORD") if password is None else password
-    force_https = bool(os.environ.get("DYNO")) if force_https is None else force_https
+    force_https = os.environ.get("FORCE_HTTPS", "1") != "0" if force_https is None else force_https
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     # Middleware added last runs first: redirect to HTTPS before asking for the password.
@@ -63,6 +69,10 @@ def build_app(api, password=None, dist=FRONTEND_DIST, force_https=None):
         app.add_middleware(SharedPasswordGate, password=password)
     if force_https:
         app.add_middleware(HttpsRedirect)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():
+        return PlainTextResponse("ok")
 
     app.mount("/api", api)
 

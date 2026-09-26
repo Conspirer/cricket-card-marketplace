@@ -1,0 +1,18 @@
+# Render Blueprint: one Docker web service. The database is Neon (not Render),
+# so DATABASE_URL is entered by hand in the dashboard.
+services:
+  - type: web
+    name: crease
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz   # open even behind SITE_PASSWORD
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL        # Neon connection string (direct endpoint, sslmode=require)
+        sync: false
+      - key: SITE_PASSWORD       # shared password for the whole site
+        sync: false
+      - key: DB_POOL_MAX
+        value: "5"
+      # DEV_FAUCET_ENABLED is deliberately absent: it must stay unset in production.

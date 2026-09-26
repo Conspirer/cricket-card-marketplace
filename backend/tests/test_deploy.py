@@ -124,3 +124,29 @@ def test_migrate_builds_fresh_database_and_is_idempotent():
     finally:
         with psycopg.connect(admin, autocommit=True) as conn:
             conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+def test_healthz_is_open_behind_the_password(dist):
+    client = TestClient(build_app(tiny_api(), password="pw", dist=dist, force_https=True))
+    r = client.get("/healthz")
+    assert r.status_code == 200 and r.text == "ok"
+    assert client.get("/api/battles/3").status_code == 401  # nothing else is
+
+
+def test_no_redirect_without_a_proxy_header(dist):
+    # Local requests and the host's own health checks carry no X-Forwarded-Proto.
+    client = TestClient(build_app(tiny_api(), password="", dist=dist, force_https=True))
+    assert client.get("/api/battles/3", follow_redirects=False).status_code == 200
+
+
+def test_connection_options_for_neon_and_local(monkeypatch):
+    from backend.database import connection_options
+    monkeypatch.delenv("DATABASE_SSLMODE", raising=False)
+    neon = "postgresql://u:p@ep-cool-name-123456.eu-central-1.aws.neon.tech/crease"
+    assert connection_options(neon) == {"sslmode": "require"}
+    assert connection_options(neon + "?sslmode=verify-full") == {}  # the URL's own choice wins
+    pooled = "postgresql://u:p@ep-cool-name-123456-pooler.eu-central-1.aws.neon.tech/crease?sslmode=require"
+    assert connection_options(pooled) == {"prepare_threshold": None}
+    assert connection_options("postgresql://cricket:x@localhost:5432/cricket_marketplace") == {"sslmode": "prefer"}
+    monkeypatch.setenv("DATABASE_SSLMODE", "disable")
+    assert connection_options(neon) == {"sslmode": "disable"}

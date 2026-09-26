@@ -12,7 +12,8 @@ Applied migrations are recorded in schema_migrations.
   * Existing database without history (a restored pg_dump from before this
     script existed): refuses to guess. If it's current, run --baseline.
 
-Runs as Heroku's release phase (see Procfile), so every deploy migrates.
+Runs before the server starts in the Docker image (see Dockerfile), so every
+deploy migrates.
 """
 
 import argparse
