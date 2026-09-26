@@ -1,14 +1,18 @@
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { api, type BattleCard, type BattleRound, type BattleView, type StatKey, type ThemeMeta } from "../api";
+import { api, type BattleCall, type BattleCard, type BattleRound, type BattleView, type StatKey, type ThemeMeta } from "../api";
 import { useSession } from "../session";
 import { useToast } from "../toast";
 import { STAT_LABELS, statValue } from "../format";
 import { TradingCard, type CardFace } from "../components/TradingCard";
 import { useCountdown } from "../useCountdown";
 
-const PHASE_SECONDS = { CARD_PICK: 30, STAT_CALL: 15, REVEAL: 6 } as const;
+const PHASE_SECONDS = { CARD_PICK: 30, CALL: 15, REVEAL: 6 } as const;
+const REGULATION_ROUNDS = 6;
+
+const roundLabel = (round: number) =>
+  round > REGULATION_ROUNDS ? `Sudden death ${round - REGULATION_ROUNDS} of 3` : `Round ${round} of 6`;
 
 const face = (c: BattleCard): CardFace => ({
   player_name: c.name,
@@ -81,7 +85,7 @@ export function BattlePage() {
 
       {view.status === "ACTIVE" && view.phase === "REVEAL" && last && (
         <>
-          <ThemeBanner theme={last.theme} round={last.round} suddenDeath={last.round === 7} />
+          <ThemeBanner theme={last.theme} round={last.round} suddenDeath={last.sudden_death} />
           <PhaseTimer view={view} fetchedAt={dataUpdatedAt} label="Next round in" />
           <RevealPanel round={last} opponent={view.opponent.username} animate />
         </>
@@ -95,7 +99,7 @@ export function BattlePage() {
 // ---------------------------------------------------------------------------
 
 function ScoreBar({ view, onForfeit }: { view: BattleView; onForfeit: () => void }) {
-  const slots = Array.from({ length: Math.max(6, view.rounds.length) }, (_, i) => view.rounds[i]);
+  const slots = Array.from({ length: Math.max(REGULATION_ROUNDS, view.rounds.length) }, (_, i) => view.rounds[i]);
   return (
     <div className="mb-8 flex flex-wrap items-center justify-between gap-6 border-b border-line pb-6">
       <div className="flex items-baseline gap-4">
@@ -104,21 +108,22 @@ function ScoreBar({ view, onForfeit }: { view: BattleView; onForfeit: () => void
           {view.score.you}<span className="px-2 text-faint">–</span>{view.score.them}
         </span>
         <span className="font-display text-2xl font-black text-mute uppercase">{view.opponent.username}</span>
+        <span className="font-mono text-[11px] tracking-[0.1em] text-faint uppercase">pts</span>
       </div>
       <div className="flex items-center gap-4">
-        <ol className="flex gap-1.5" aria-label="Round results">
+        <ol className="flex gap-1.5" aria-label="Points per round">
           {slots.map((r, i) => (
             <li
               key={i}
-              title={r ? `Round ${r.round}: ${r.result === "draw" ? "drawn" : r.result === "you" ? "won" : "lost"}` : `Round ${i + 1}`}
-              className={`flex h-7 w-7 items-center justify-center rounded-full border font-mono text-[10px] ${
+              title={r ? `${roundLabel(r.round)}: ${r.points.you}–${r.points.them}` : roundLabel(i + 1)}
+              className={`flex h-8 min-w-8 items-center justify-center rounded-full border px-1.5 font-mono text-[10px] tabular-nums ${
                 !r ? "border-line text-faint"
-                : r.result === "you" ? "border-pitch bg-pitch/25 text-cream"
-                : r.result === "them" ? "border-leather bg-leather/25 text-cream"
+                : r.points.you > r.points.them ? "border-pitch bg-pitch/25 text-cream"
+                : r.points.them > r.points.you ? "border-leather bg-leather/25 text-cream"
                 : "border-line-strong bg-line text-mute"
               }`}
             >
-              {i === 6 ? "SD" : i + 1}
+              {r ? `${r.points.you}-${r.points.them}` : i >= REGULATION_ROUNDS ? `SD${i - REGULATION_ROUNDS + 1}` : i + 1}
             </li>
           ))}
         </ol>
@@ -141,7 +146,7 @@ function ThemeBanner({ theme, round, suddenDeath }: { theme: ThemeMeta; round: n
       animate={{ opacity: 1, y: 0 }}
       className={`relative mb-4 overflow-hidden border px-6 py-5 ${rare ? "theme-rare border-brass" : "border-line bg-surface"}`}
     >
-      <div className="eyebrow">{suddenDeath ? "Sudden death · any card" : `Round ${round} of 6`}</div>
+      <div className="eyebrow">{roundLabel(round)}{suddenDeath ? " · any card" : ""}</div>
       <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className={`font-display text-5xl leading-none font-black uppercase sm:text-6xl ${rare ? "text-brass-bright" : ""}`}>
           {theme.label}
@@ -155,7 +160,7 @@ function ThemeBanner({ theme, round, suddenDeath }: { theme: ThemeMeta; round: n
 function PhaseTimer({ view, fetchedAt, label }: { view: BattleView; fetchedAt: number; label?: string }) {
   const left = useCountdown(view.phase_deadline, view.server_now, fetchedAt);
   const total = view.phase ? PHASE_SECONDS[view.phase] : 1;
-  const text = label ?? (view.phase === "CARD_PICK" ? "Pick a card" : "Stat call");
+  const text = label ?? (view.phase === "CARD_PICK" ? "Pick a card" : "Call a stat");
   return (
     <div className="mb-8">
       <div className="mb-1.5 flex justify-between font-mono text-[11px] tracking-[0.1em] text-mute uppercase">
@@ -187,8 +192,8 @@ function PickPhase({ view, onPick, busy }: { view: BattleView; onPick: (id: numb
   return (
     <div>
       <p className="mb-4 text-mute">
-        {current.caller === "you" ? "You call this round." : `${view.opponent.username} calls this round.`} Pick the card you
-        think is strongest in <span className="text-cream">{current.theme.label}</span>.
+        Pick the card you think is strongest in <span className="text-cream">{current.theme.label}</span>. After both cards
+        are shown, you both call a stat.
       </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {view.hand.map((card) => {
@@ -216,13 +221,17 @@ function PickPhase({ view, onPick, busy }: { view: BattleView; onPick: (id: numb
 
 function CallPhase({ view, onCall, busy }: { view: BattleView; onCall: (s: StatKey) => void; busy: boolean }) {
   const current = view.current!;
+  const mine = current.theme.stats.find((s) => s.key === current.your_call);
   return (
     <div className="grid items-center gap-6 md:grid-cols-[1fr_auto_1fr]">
       <CardSlot card={current.your_pick} label="You" />
-      <div className="flex min-w-[240px] flex-col items-center gap-3">
-        {current.caller === "you" ? (
+      <div className="flex min-w-[260px] flex-col items-center gap-3">
+        {!mine ? (
           <>
             <p className="eyebrow">Call a stat</p>
+            <p className="max-w-[260px] text-center text-xs text-mute">
+              Whichever card wins your call scores a point for its owner.
+            </p>
             <div className="grid w-full gap-2">
               {current.theme.stats.map((s) => (
                 <button key={s.key} className="btn btn-ghost w-full justify-between !px-4" disabled={busy} onClick={() => onCall(s.key)}>
@@ -235,7 +244,13 @@ function CallPhase({ view, onCall, busy }: { view: BattleView; onCall: (s: StatK
             </div>
           </>
         ) : (
-          <p className="py-10 text-center text-mute">{view.opponent.username} is calling a stat…</p>
+          <div className="py-8 text-center">
+            <p className="eyebrow">You called</p>
+            <p className="mt-1 font-display text-3xl font-black uppercase">{mine.label}</p>
+            <p className="mt-4 text-mute">
+              {current.their_call_made ? "Both calls in. Revealing…" : `Waiting for ${view.opponent.username} to call…`}
+            </p>
+          </div>
         )}
       </div>
       <CardSlot card={current.their_pick} label={view.opponent.username} />
@@ -262,51 +277,79 @@ function CardSlot({ card, label, highlight }: { card: BattleCard | null; label: 
 function FlipNumber({ value, stat, delay, tone }: { value: number | null; stat: StatKey; delay: number; tone: "win" | "lose" | "draw" }) {
   return (
     <motion.span
-      initial={{ rotateX: 90, opacity: 0 }}
+      initial={delay >= 0 ? { rotateX: 90, opacity: 0 } : false}
       animate={{ rotateX: 0, opacity: 1 }}
-      transition={{ delay, duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
-      className={`inline-block font-display text-6xl leading-none font-black tabular-nums ${
-        tone === "win" ? "text-brass-bright" : tone === "lose" ? "text-mute" : "text-cream"
+      transition={{ delay: Math.max(delay, 0), duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
+      className={`inline-block min-w-[3ch] font-display text-5xl leading-none font-black tabular-nums ${
+        tone === "win" ? "text-brass-bright" : tone === "lose" ? "text-faint" : "text-cream"
       }`}
       style={{ transformOrigin: "50% 50%" }}
     >
-      {value == null ? "No data" : statValue(stat, value)}
+      {value == null ? "–" : statValue(stat, value)}
     </motion.span>
   );
 }
 
+function CallLine({ call, who, opponent, stats, delay }: {
+  call: BattleCall;
+  who: "you" | "them";
+  opponent: string;
+  stats: ThemeMeta["stats"];
+  delay: number;
+}) {
+  const meta = stats.find((s) => s.key === call.stat);
+  const tone = (side: "you" | "them") => (call.point === side ? "win" : call.point ? "lose" : "draw");
+  const verdict =
+    call.point === null ? "No point" : call.point === "you" ? "Point to you" : `Point to ${opponent}`;
+  const backfired = call.point !== null && call.point !== who;
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-2 border-t border-line py-4 first:border-t-0 sm:grid-cols-[180px_1fr_170px]">
+      <div>
+        <div className="eyebrow">{who === "you" ? "Your call" : `${opponent}'s call`}{call.timed_out ? " · timed out" : ""}</div>
+        <div className="mt-1 font-display text-2xl leading-none font-black uppercase">{meta?.label ?? STAT_LABELS[call.stat]}</div>
+        <div className="mt-1 font-mono text-[10px] text-faint">{meta?.lower_wins ? "lower wins" : "higher wins"}</div>
+      </div>
+      <div className="order-last col-span-2 flex items-center justify-center gap-5 sm:order-none sm:col-span-1">
+        <FlipNumber value={call.your_value} stat={call.stat} delay={delay} tone={tone("you")} />
+        <span className="font-mono text-xs text-faint">you · them</span>
+        <FlipNumber value={call.their_value} stat={call.stat} delay={delay < 0 ? -1 : delay + 0.25} tone={tone("them")} />
+      </div>
+      <div className={`text-right font-display text-xl font-black uppercase ${
+        call.point === "you" ? "text-pitch" : call.point === "them" ? "text-leather" : "text-mute"
+      }`}>
+        {verdict}
+        {backfired && <div className="font-mono text-[10px] font-normal tracking-[0.08em] text-faint normal-case">called their strength</div>}
+      </div>
+    </div>
+  );
+}
+
 function RevealPanel({ round, opponent, animate }: { round: BattleRound; opponent: string; animate?: boolean }) {
-  const you = round.result === "you" ? "win" : round.result === "them" ? "lose" : "draw";
-  const them = round.result === "them" ? "win" : round.result === "you" ? "lose" : "draw";
-  const lowerWins = round.theme.stats.find((s) => s.key === round.stat)?.lower_wins;
+  const lead = round.points.you - round.points.them;
+  const mine = lead > 0 ? "win" : lead < 0 ? "lose" : "draw";
+  const theirs = lead < 0 ? "win" : lead > 0 ? "lose" : "draw";
   return (
     <div>
-      <div className="grid items-center gap-6 md:grid-cols-[1fr_auto_1fr]">
-        <CardSlot card={round.your_card} label="You" highlight={you} />
-        <div className="flex min-w-[260px] flex-col items-center gap-2 text-center">
-          <span className="eyebrow">
-            {round.caller === "you" ? "You called" : `${opponent} called`}
-            {round.call_timed_out ? " (timed out, random)" : ""}
-          </span>
-          <span className="font-display text-3xl font-black uppercase">{STAT_LABELS[round.stat]}</span>
-          <span className="font-mono text-[10px] text-faint">{lowerWins ? "lower wins" : "higher wins"}</span>
-          <div className="mt-3 flex items-center gap-5">
-            <FlipNumber value={round.your_value} stat={round.stat} delay={animate ? 0.2 : 0} tone={you} />
-            <span className="text-faint">v</span>
-            <FlipNumber value={round.their_value} stat={round.stat} delay={animate ? 0.7 : 0} tone={them} />
-          </div>
+      <div className="grid items-start gap-6 md:grid-cols-[1fr_auto_1fr]">
+        <CardSlot card={round.your_card} label="You" highlight={mine} />
+        <div className="flex min-w-[240px] flex-col items-center gap-1 pt-16 text-center">
+          <span className="eyebrow">This round</span>
           <motion.span
-            initial={animate ? { opacity: 0 } : false}
-            animate={{ opacity: 1 }}
-            transition={{ delay: animate ? 1.3 : 0 }}
-            className={`mt-3 font-display text-2xl font-black uppercase ${
-              round.result === "you" ? "text-pitch" : round.result === "them" ? "text-leather" : "text-mute"
-            }`}
+            initial={animate ? { opacity: 0, scale: 0.9 } : false}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: animate ? 1.4 : 0 }}
+            className="font-display text-7xl leading-none font-black tabular-nums"
           >
-            {round.result === "you" ? "Round to you" : round.result === "them" ? `Round to ${opponent}` : "Drawn"}
+            {round.points.you}–{round.points.them}
           </motion.span>
+          <span className="font-mono text-[11px] text-faint">points (you–{opponent})</span>
         </div>
-        <CardSlot card={round.their_card} label={opponent} highlight={them} />
+        <CardSlot card={round.their_card} label={opponent} highlight={theirs} />
+      </div>
+
+      <div className="mt-8 border border-line bg-surface px-5">
+        <CallLine call={round.your_call} who="you" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.2 : -1} />
+        <CallLine call={round.their_call} who="them" opponent={opponent} stats={round.theme.stats} delay={animate ? 0.8 : -1} />
       </div>
       <FullStats round={round} opponent={opponent} />
     </div>
@@ -327,15 +370,23 @@ function FullStats({ round, opponent }: { round: BattleRound; opponent: string }
           </tr>
         </thead>
         <tbody>
-          {round.theme.stats.map((s) => (
-            <tr key={s.key} className={`border-b border-line last:border-0 ${s.key === round.stat ? "bg-brass/10" : ""}`}>
+          {round.theme.stats.map((s) => {
+            const called = [round.your_call.stat === s.key && "you", round.their_call.stat === s.key && "them"].filter(Boolean);
+            return (
+            <tr key={s.key} className={`border-b border-line last:border-0 ${called.length ? "bg-brass/10" : ""}`}>
               <td className="px-4 py-2">
-                {s.label} {s.key === round.stat && <span className="ml-1 font-mono text-[10px] text-brass-bright uppercase">called</span>}
+                {s.label}
+                {called.length > 0 && (
+                  <span className="ml-2 font-mono text-[10px] text-brass-bright uppercase">
+                    called by {called.length === 2 ? "both" : called[0] === "you" ? "you" : opponent}
+                  </span>
+                )}
               </td>
               <td className="px-4 py-2 text-right font-mono tabular-nums">{statValue(s.key, round.your_card_stats[s.key])}</td>
               <td className="px-4 py-2 text-right font-mono tabular-nums">{statValue(s.key, round.their_card_stats[s.key])}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -354,7 +405,8 @@ function ResultScreen({ view }: { view: BattleView }) {
         <div className="eyebrow">{view.status === "FORFEIT" ? "Ended by forfeit" : "Final"}</div>
         <h1 className="mt-2 font-display text-7xl leading-none font-black uppercase">{title}</h1>
         <p className="mt-3 font-mono text-sm text-mute">
-          {view.score.you}–{view.score.them}{view.score.draws ? ` · ${view.score.draws} drawn` : ""}
+          {view.score.you}–{view.score.them} points
+          {view.rounds.length > REGULATION_ROUNDS ? ` · ${view.rounds.length - REGULATION_ROUNDS} sudden-death round${view.rounds.length > REGULATION_ROUNDS + 1 ? "s" : ""}` : ""}
         </p>
         <Link to="/battles" className="btn btn-ghost mt-6">Back to battles</Link>
       </motion.div>
@@ -364,7 +416,7 @@ function ResultScreen({ view }: { view: BattleView }) {
           {view.rounds.map((r) => (
             <section key={r.round}>
               <h2 className="eyebrow mb-4">
-                {r.round === 7 ? "Sudden death" : `Round ${r.round}`} · {r.theme.label}
+                {roundLabel(r.round)} · {r.theme.label}
                 {r.your_pick_timed_out ? " · your pick timed out" : ""}
                 {r.their_pick_timed_out ? " · their pick timed out" : ""}
               </h2>

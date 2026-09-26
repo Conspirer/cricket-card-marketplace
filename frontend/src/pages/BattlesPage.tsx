@@ -53,8 +53,8 @@ export function BattlesPage() {
     <>
       <PageHeader eyebrow="Six rounds · hidden stats · know your cricket" title="Battles">
         <p className="max-w-sm text-sm text-mute">
-          Each round draws a theme. Both players secretly play a card, then the caller names a stat. Only then are the
-          numbers revealed.
+          Each round draws a theme. Both players secretly play a card, then both secretly call a stat. Every call scores a
+          point for whichever card wins it, so call your own strength.
         </p>
       </PageHeader>
 
@@ -149,8 +149,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Row({ b, action }: { b: BattleSummary; action: ReactNode }) {
   const outcome =
     b.status === "PENDING" ? <Expires at={b.expires_at} />
-    : b.status === "ACTIVE" ? `Round ${b.current_round > 6 ? "SD" : b.current_round} · ${b.score.you}–${b.score.them}`
-    : `${b.winner === "you" ? "Won" : b.winner === "them" ? "Lost" : "Drawn"} ${b.score.you}–${b.score.them}${b.status === "FORFEIT" ? " (forfeit)" : ""}`;
+    : b.status === "ACTIVE" ? `${b.current_round > 6 ? `Sudden death ${b.current_round - 6}` : `Round ${b.current_round}`} · ${b.score.you}–${b.score.them} pts`
+    : `${b.winner === "you" ? "Won" : b.winner === "them" ? "Lost" : "Drawn"} ${b.score.you}–${b.score.them} pts${b.status === "FORFEIT" ? " (forfeit)" : ""}`;
   const tone = b.winner === "you" ? "text-pitch" : b.winner === "them" ? "text-leather" : "text-mute";
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-4 py-3">

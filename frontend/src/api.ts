@@ -67,19 +67,25 @@ export type ThemeMeta = {
   stats: { key: StatKey; label: string; lower_wins: boolean }[];
 };
 
-export type BattleRound = {
-  round: number;
-  theme: ThemeMeta;
-  caller: Who;
+export type BattleCall = {
   stat: StatKey;
-  your_card: BattleCard;
-  their_card: BattleCard;
   your_value: number | null;
   their_value: number | null;
-  result: Who | "draw";
+  point: Who | null; // whose card won this call; null = no point
+  timed_out: boolean;
+};
+
+export type BattleRound = {
+  round: number;
+  sudden_death: boolean;
+  theme: ThemeMeta;
+  your_card: BattleCard;
+  their_card: BattleCard;
+  your_call: BattleCall;
+  their_call: BattleCall;
+  points: { you: number; them: number };
   your_pick_timed_out: boolean;
   their_pick_timed_out: boolean;
-  call_timed_out: boolean;
   your_card_stats: Partial<Record<StatKey, number | null>>;
   their_card_stats: Partial<Record<StatKey, number | null>>;
 };
@@ -94,19 +100,20 @@ export type BattleView = {
   created_at: string;
   expires_at: string;
   current_round: number;
-  phase: "CARD_PICK" | "STAT_CALL" | "REVEAL" | null;
+  phase: "CARD_PICK" | "CALL" | "REVEAL" | null;
   phase_deadline: string | null;
-  score: { you: number; them: number; draws: number };
+  score: { you: number; them: number };
   winner: Who | null;
   hand: (BattleCard & { used: boolean })[];
   current: {
     round: number;
     sudden_death: boolean;
     theme: ThemeMeta;
-    caller: Who;
     your_pick: BattleCard | null;
     their_pick_made: boolean;
     their_pick: BattleCard | null;
+    your_call: StatKey | null;
+    their_call_made: boolean; // never which stat, until both are in
   } | null;
   rounds: BattleRound[];
 };
@@ -118,7 +125,7 @@ export type BattleSummary = {
   opponent: string;
   current_round: number;
   phase: BattleView["phase"];
-  score: { you: number; them: number; draws: number };
+  score: { you: number; them: number };
   winner: Who | null;
   created_at: string;
   expires_at: string;

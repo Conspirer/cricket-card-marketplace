@@ -96,7 +96,7 @@ THEMES = {
 }
 
 # Battle theme draw weights: common themes most rounds, rare ones occasionally.
-THEME_WEIGHTS = {"common": 22, "rare": 4}
+THEME_WEIGHTS = {"common": 22, "rare": 2}
 
 
 def stat_set(theme):

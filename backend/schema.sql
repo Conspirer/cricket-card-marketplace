@@ -158,14 +158,12 @@ CREATE TABLE IF NOT EXISTS battles (
     opponent_card_ids       BIGINT[],
     challenger_deck         JSONB,
     opponent_deck           JSONB,
-    themes                  TEXT[],            -- 6 rounds + the sudden-death theme
+    themes                  TEXT[],            -- 6 rounds + up to 3 sudden-death rounds
     current_round           INTEGER NOT NULL DEFAULT 0,
-    phase                   VARCHAR(10) CHECK (phase IN ('CARD_PICK', 'STAT_CALL', 'REVEAL')),
+    phase                   VARCHAR(10) CONSTRAINT battles_phase_check CHECK (phase IN ('CARD_PICK', 'CALL', 'REVEAL')),
     phase_deadline          TIMESTAMPTZ,
-    sudden_death_caller_id  BIGINT REFERENCES users(id),
-    challenger_wins         INTEGER NOT NULL DEFAULT 0,
-    opponent_wins           INTEGER NOT NULL DEFAULT 0,
-    draws                   INTEGER NOT NULL DEFAULT 0,
+    challenger_points       INTEGER NOT NULL DEFAULT 0,
+    opponent_points         INTEGER NOT NULL DEFAULT 0,
     winner_id               BIGINT REFERENCES users(id),   -- NULL when drawn or not finished
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at              TIMESTAMPTZ NOT NULL,
@@ -181,7 +179,7 @@ CREATE INDEX IF NOT EXISTS battles_opponent_idx ON battles (opponent_id, created
 CREATE TABLE IF NOT EXISTS battle_moves (
     id              BIGSERIAL PRIMARY KEY,
     battle_id       BIGINT NOT NULL REFERENCES battles(id),
-    round           INTEGER NOT NULL CHECK (round BETWEEN 1 AND 7),
+    round           INTEGER NOT NULL CHECK (round BETWEEN 1 AND 9),
     player_id       BIGINT NOT NULL REFERENCES users(id),
     card_id         BIGINT NOT NULL REFERENCES card_instances(id),
     stat            TEXT,
@@ -193,19 +191,25 @@ CREATE TABLE IF NOT EXISTS battle_moves (
 
 -- The public record of a resolved round.
 CREATE TABLE IF NOT EXISTS battle_rounds (
-    battle_id                  BIGINT NOT NULL REFERENCES battles(id),
-    round                      INTEGER NOT NULL CHECK (round BETWEEN 1 AND 7),
-    theme                      TEXT NOT NULL,
-    caller_id                  BIGINT NOT NULL REFERENCES users(id),
-    challenger_card_id         BIGINT NOT NULL REFERENCES card_instances(id),
-    opponent_card_id           BIGINT NOT NULL REFERENCES card_instances(id),
-    stat                       TEXT NOT NULL,
-    challenger_value           NUMERIC,           -- NULL = no data
-    opponent_value             NUMERIC,
-    winner_id                  BIGINT REFERENCES users(id),   -- NULL = drawn
-    challenger_pick_timed_out  BOOLEAN NOT NULL,
-    opponent_pick_timed_out    BOOLEAN NOT NULL,
-    call_timed_out             BOOLEAN NOT NULL,
-    resolved_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (battle_id, round)
+    battle_id                        BIGINT NOT NULL REFERENCES battles(id),
+    round                            INTEGER NOT NULL CHECK (round BETWEEN 1 AND 9),
+    theme                            TEXT NOT NULL,
+    challenger_card_id               BIGINT NOT NULL REFERENCES card_instances(id),
+    opponent_card_id                 BIGINT NOT NULL REFERENCES card_instances(id),
+    -- Each call compares both cards on the called stat. NULL value = no data.
+    challenger_stat                  TEXT NOT NULL,
+    challenger_call_challenger_value NUMERIC,
+    challenger_call_opponent_value   NUMERIC,
+    opponent_stat                    TEXT NOT NULL,
+    opponent_call_challenger_value   NUMERIC,
+    opponent_call_opponent_value     NUMERIC,
+    challenger_points                INTEGER NOT NULL CHECK (challenger_points BETWEEN 0 AND 2),
+    opponent_points                  INTEGER NOT NULL CHECK (opponent_points BETWEEN 0 AND 2),
+    challenger_pick_timed_out        BOOLEAN NOT NULL,
+    opponent_pick_timed_out          BOOLEAN NOT NULL,
+    challenger_call_timed_out        BOOLEAN NOT NULL,
+    opponent_call_timed_out          BOOLEAN NOT NULL,
+    resolved_at                      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (battle_id, round),
+    CHECK (challenger_points + opponent_points <= 2)
 );

@@ -6,7 +6,8 @@ transaction, so simultaneous submissions and timeouts resolve exactly once.
 
 Secrecy: deck snapshots (with every stat) never leave the server. The only
 numbers any response contains are values from battle_rounds, i.e. rounds
-whose stat has already been called, plus those two cards' theme stats.
+where both calls are in, plus those two cards' theme stats. Neither player's
+card or call is shown to the other before both are in.
 """
 
 from datetime import timedelta
@@ -151,6 +152,9 @@ class Battle:
     def other(self, user_id):
         return self.b["opponent_id"] if user_id == self.b["challenger_id"] else self.b["challenger_id"]
 
+    def players(self):
+        return (self.b["challenger_id"], self.b["opponent_id"])
+
     def deck(self, user_id):
         return self.b["challenger_deck"] if user_id == self.b["challenger_id"] else self.b["opponent_deck"]
 
@@ -160,12 +164,6 @@ class Battle:
     def theme(self, round_number=None):
         return self.b["themes"][(round_number or self.b["current_round"]) - 1]
 
-    def caller(self, round_number=None):
-        return rules.caller_for_round(
-            round_number or self.b["current_round"],
-            self.b["challenger_id"], self.b["opponent_id"], self.b["sudden_death_caller_id"],
-        )
-
     def moves(self, round_number=None):
         self.cursor.execute(
             "SELECT * FROM battle_moves WHERE battle_id = %s AND round = %s;",
@@ -173,19 +171,15 @@ class Battle:
         )
         return {m["player_id"]: m for m in self.cursor.fetchall()}
 
-    def used_cards(self, user_id):
-        """Cards this player has played in earlier regulation rounds."""
-        self.cursor.execute(
-            "SELECT card_id FROM battle_moves WHERE battle_id = %s AND player_id = %s AND round < %s;",
-            (self.b["id"], user_id, min(self.b["current_round"], rules.SUDDEN_DEATH_ROUND)),
-        )
-        return {r["card_id"] for r in self.cursor.fetchall()}
-
     def playable(self, user_id):
         deck = self.deck(user_id)
-        if self.b["current_round"] == rules.SUDDEN_DEATH_ROUND:
+        if rules.is_sudden_death(self.b["current_round"]):
             return [c["card_id"] for c in deck]  # any card may be reused
-        used = self.used_cards(user_id)
+        self.cursor.execute(
+            "SELECT card_id FROM battle_moves WHERE battle_id = %s AND player_id = %s AND round < %s;",
+            (self.b["id"], user_id, self.b["current_round"]),
+        )
+        used = {r["card_id"] for r in self.cursor.fetchall()}
         return [c["card_id"] for c in deck if c["card_id"] not in used]
 
     def start_phase(self, phase, seconds, base):
@@ -202,7 +196,7 @@ class Battle:
         self.b["phase_deadline"] = None
         self.b["finished_at"] = at
         if status == "FINISHED":
-            outcome = rules.battle_winner(self.b["challenger_wins"], self.b["opponent_wins"])
+            outcome = rules.battle_winner(self.b["challenger_points"], self.b["opponent_points"])
             winner_id = {"challenger": self.b["challenger_id"], "opponent": self.b["opponent_id"]}.get(outcome)
         self.b["winner_id"] = winner_id
 
@@ -217,62 +211,57 @@ class Battle:
             (self.b["id"], self.b["current_round"], user_id, card_id, timed_out),
         )
 
-    def after_picks(self, base):
-        self.start_phase("STAT_CALL", rules.STAT_CALL_SECONDS, base)
-
-    def record_call(self, stat, timed_out=False):
+    def record_call(self, user_id, stat, timed_out=False):
         self.cursor.execute(
             """
             UPDATE battle_moves SET stat = %s, call_timed_out = %s
             WHERE battle_id = %s AND round = %s AND player_id = %s AND stat IS NULL;
             """,
-            (stat, timed_out, self.b["id"], self.b["current_round"], self.caller()),
+            (stat, timed_out, self.b["id"], self.b["current_round"], user_id),
         )
 
     def resolve_round(self, base):
         b = self.b
-        number, theme, caller = b["current_round"], self.theme(), self.caller()
+        number, theme = b["current_round"], self.theme()
         moves = self.moves()
-        stat = moves[caller]["stat"]
         c_move, o_move = moves[b["challenger_id"]], moves[b["opponent_id"]]
-        c_value = rules.stat_value(self.card(b["challenger_id"], c_move["card_id"]), theme, stat)
-        o_value = rules.stat_value(self.card(b["opponent_id"], o_move["card_id"]), theme, stat)
-
-        result = rules.compare(stat, c_value, o_value)
-        winner_id = b["challenger_id"] if result > 0 else b["opponent_id"] if result < 0 else None
-        if result > 0:
-            b["challenger_wins"] += 1
-        elif result < 0:
-            b["opponent_wins"] += 1
-        else:
-            b["draws"] += 1
+        scored = rules.score_round(
+            theme,
+            self.card(b["challenger_id"], c_move["card_id"]),
+            self.card(b["opponent_id"], o_move["card_id"]),
+            c_move["stat"],
+            o_move["stat"],
+        )
+        b["challenger_points"] += scored["challenger_points"]
+        b["opponent_points"] += scored["opponent_points"]
+        c_call, o_call = scored["challenger_call"], scored["opponent_call"]
 
         self.cursor.execute(
             """
             INSERT INTO battle_rounds (
-                battle_id, round, theme, caller_id, challenger_card_id, opponent_card_id, stat,
-                challenger_value, opponent_value, winner_id,
-                challenger_pick_timed_out, opponent_pick_timed_out, call_timed_out
+                battle_id, round, theme, challenger_card_id, opponent_card_id,
+                challenger_stat, challenger_call_challenger_value, challenger_call_opponent_value,
+                opponent_stat, opponent_call_challenger_value, opponent_call_opponent_value,
+                challenger_points, opponent_points,
+                challenger_pick_timed_out, opponent_pick_timed_out,
+                challenger_call_timed_out, opponent_call_timed_out
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
             """,
             (
-                b["id"], number, theme, caller, c_move["card_id"], o_move["card_id"], stat,
-                c_value, o_value, winner_id,
-                c_move["pick_timed_out"], o_move["pick_timed_out"], moves[caller]["call_timed_out"],
+                b["id"], number, theme, c_move["card_id"], o_move["card_id"],
+                c_call["stat"], c_call["challenger_value"], c_call["opponent_value"],
+                o_call["stat"], o_call["challenger_value"], o_call["opponent_value"],
+                scored["challenger_points"], scored["opponent_points"],
+                c_move["pick_timed_out"], o_move["pick_timed_out"],
+                c_move["call_timed_out"], o_move["call_timed_out"],
             ),
         )
 
-        tied = b["challenger_wins"] == b["opponent_wins"]
-        if number == rules.SUDDEN_DEATH_ROUND or (number == rules.REGULATION_ROUNDS and not tied):
+        if rules.battle_over(number, b["challenger_points"], b["opponent_points"]):
             self.finish(base)
         else:
             self.start_phase("REVEAL", rules.REVEAL_SECONDS, base)
-
-    def after_reveal(self, base):
-        number = self.b["current_round"]
-        # Round 6 only reaches REVEAL when tied (otherwise it finished).
-        self.begin_round(number + 1 if number < rules.REGULATION_ROUNDS else rules.SUDDEN_DEATH_ROUND, base)
 
     def advance(self):
         """Apply every deadline that has passed. Idempotent under the row lock."""
@@ -286,15 +275,18 @@ class Battle:
             deadline = b["phase_deadline"]
             if b["phase"] == "CARD_PICK":
                 moves = self.moves()
-                for user_id in (b["challenger_id"], b["opponent_id"]):
+                for user_id in self.players():
                     if user_id not in moves:
                         self.record_pick(user_id, rules._rng.choice(self.playable(user_id)), timed_out=True)
-                self.after_picks(deadline)
-            elif b["phase"] == "STAT_CALL":
-                self.record_call(rules._rng.choice(THEMES[self.theme()]["stats"]), timed_out=True)
+                self.start_phase("CALL", rules.CALL_SECONDS, deadline)
+            elif b["phase"] == "CALL":
+                moves = self.moves()
+                for user_id in self.players():
+                    if moves[user_id]["stat"] is None:
+                        self.record_call(user_id, rules._rng.choice(THEMES[self.theme()]["stats"]), timed_out=True)
                 self.resolve_round(deadline)
             elif b["phase"] == "REVEAL":
-                self.after_reveal(deadline)
+                self.begin_round(b["current_round"] + 1, deadline)
 
     def save(self):
         b = self.b
@@ -303,7 +295,7 @@ class Battle:
             UPDATE battles SET
                 status = %s, opponent_card_ids = %s, challenger_deck = %s, opponent_deck = %s,
                 themes = %s, current_round = %s, phase = %s, phase_deadline = %s,
-                sudden_death_caller_id = %s, challenger_wins = %s, opponent_wins = %s, draws = %s,
+                challenger_points = %s, opponent_points = %s,
                 winner_id = %s, started_at = %s, finished_at = %s
             WHERE id = %s;
             """,
@@ -312,7 +304,7 @@ class Battle:
                 Jsonb(b["challenger_deck"]) if b["challenger_deck"] is not None else None,
                 Jsonb(b["opponent_deck"]) if b["opponent_deck"] is not None else None,
                 b["themes"], b["current_round"], b["phase"], b["phase_deadline"],
-                b["sudden_death_caller_id"], b["challenger_wins"], b["opponent_wins"], b["draws"],
+                b["challenger_points"], b["opponent_points"],
                 b["winner_id"], b["started_at"], b["finished_at"], b["id"],
             ),
         )
@@ -348,10 +340,9 @@ def view(battle, viewer_id):
     me = battle.side(viewer_id)
     if me is None:
         raise HTTPException(403, "Only the two players can view this battle")
+    them = "opponent" if me == "challenger" else "challenger"
     them_id = battle.other(viewer_id)
     names = usernames(cursor, viewer_id, them_id)
-    mine = "challenger_wins" if me == "challenger" else "opponent_wins"
-    theirs = "opponent_wins" if me == "challenger" else "challenger_wins"
 
     def who(user_id):
         return None if user_id is None else ("you" if user_id == viewer_id else "them")
@@ -368,7 +359,7 @@ def view(battle, viewer_id):
         "current_round": b["current_round"],
         "phase": b["phase"],
         "phase_deadline": b["phase_deadline"],
-        "score": {"you": b[mine], "them": b[theirs], "draws": b["draws"]},
+        "score": {"you": b[f"{me}_points"], "them": b[f"{them}_points"]},
         "winner": who(b["winner_id"]),
         "hand": [],
         "current": None,
@@ -386,48 +377,60 @@ def view(battle, viewer_id):
             ]
         return out
 
-    # Resolved rounds: the called values and both cards' theme stats are public now.
+    # Resolved rounds: both calls, their values and both cards' theme stats are public now.
     cursor.execute("SELECT * FROM battle_rounds WHERE battle_id = %s ORDER BY round;", (b["id"],))
     resolved = cursor.fetchall()
-    my_col = "challenger" if me == "challenger" else "opponent"
-    their_col = "opponent" if me == "challenger" else "challenger"
+
+    def call_view(r, caller_side):
+        """A call from the viewer's perspective: your card's value and theirs."""
+        result = rules.compare(r[f"{caller_side}_stat"],
+                               r[f"{caller_side}_call_{me}_value"], r[f"{caller_side}_call_{them}_value"])
+        return {
+            "stat": r[f"{caller_side}_stat"],
+            "your_value": r[f"{caller_side}_call_{me}_value"],
+            "their_value": r[f"{caller_side}_call_{them}_value"],
+            "point": "you" if result > 0 else "them" if result < 0 else None,
+            "timed_out": r[f"{caller_side}_call_timed_out"],
+        }
+
     for r in resolved:
         theme = r["theme"]
-        my_card = battle.card(viewer_id, r[f"{my_col}_card_id"])
-        their_card = battle.card(them_id, r[f"{their_col}_card_id"])
+        my_card = battle.card(viewer_id, r[f"{me}_card_id"])
+        their_card = battle.card(them_id, r[f"{them}_card_id"])
         out["rounds"].append({
             "round": r["round"],
+            "sudden_death": rules.is_sudden_death(r["round"]),
             "theme": theme_meta(theme),
-            "caller": who(r["caller_id"]),
-            "stat": r["stat"],
             "your_card": public_card(my_card),
             "their_card": public_card(their_card),
-            "your_value": r[f"{my_col}_value"],
-            "their_value": r[f"{their_col}_value"],
-            "result": "draw" if r["winner_id"] is None else who(r["winner_id"]),
-            "your_pick_timed_out": r[f"{my_col}_pick_timed_out"],
-            "their_pick_timed_out": r[f"{their_col}_pick_timed_out"],
-            "call_timed_out": r["call_timed_out"],
+            "your_call": call_view(r, me),
+            "their_call": call_view(r, them),
+            "points": {"you": r[f"{me}_points"], "them": r[f"{them}_points"]},
+            "your_pick_timed_out": r[f"{me}_pick_timed_out"],
+            "their_pick_timed_out": r[f"{them}_pick_timed_out"],
             "your_card_stats": {s: rules.stat_value(my_card, theme, s) for s in THEMES[theme]["stats"]},
             "their_card_stats": {s: rules.stat_value(their_card, theme, s) for s in THEMES[theme]["stats"]},
         })
 
-    used = {r[f"{my_col}_card_id"] for r in resolved if r["round"] <= rules.REGULATION_ROUNDS}
+    used = {r[f"{me}_card_id"] for r in resolved if not rules.is_sudden_death(r["round"])}
     out["hand"] = [dict(public_card(c), used=c["card_id"] in used) for c in battle.deck(viewer_id)]
 
-    if b["status"] == "ACTIVE" and b["phase"] in ("CARD_PICK", "STAT_CALL"):
+    if b["status"] == "ACTIVE" and b["phase"] in ("CARD_PICK", "CALL"):
         moves = battle.moves()
-        mine_move, their_move = moves.get(viewer_id), moves.get(them_id)
-        both_in = mine_move is not None and their_move is not None
+        mine, theirs = moves.get(viewer_id), moves.get(them_id)
+        both_picked = mine is not None and theirs is not None
         out["current"] = {
             "round": b["current_round"],
-            "sudden_death": b["current_round"] == rules.SUDDEN_DEATH_ROUND,
+            "sudden_death": rules.is_sudden_death(b["current_round"]),
             "theme": theme_meta(battle.theme()),  # only the current theme; later ones stay hidden
-            "caller": who(battle.caller()),
-            "your_pick": public_card(battle.card(viewer_id, mine_move["card_id"])) if mine_move else None,
-            "their_pick_made": their_move is not None,
+            "your_pick": public_card(battle.card(viewer_id, mine["card_id"])) if mine else None,
+            "their_pick_made": theirs is not None,
             # The opponent's card is shown only once both picks are in.
-            "their_pick": public_card(battle.card(them_id, their_move["card_id"])) if both_in else None,
+            "their_pick": public_card(battle.card(them_id, theirs["card_id"])) if both_picked else None,
+            # Your own call only. The opponent's call is never sent before the
+            # round resolves; only whether they have called.
+            "your_call": mine["stat"] if mine else None,
+            "their_call_made": bool(theirs and theirs["stat"]),
         }
     return out
 
@@ -482,7 +485,6 @@ def accept_challenge(battle_id: int, body: AcceptBody):
                 challenger_deck=challenger_deck,
                 opponent_deck=opponent_deck,
                 themes=rules.draw_themes(),
-                sudden_death_caller_id=rules._rng.choice([b["challenger_id"], b["opponent_id"]]),
                 started_at=battle.now,
             )
             battle.begin_round(1, battle.now)
@@ -550,7 +552,7 @@ def pick_card(battle_id: int, body: PickBody):
 
             battle.record_pick(body.user_id, body.card_id)
             if len(battle.moves()) == 2:
-                battle.after_picks(battle.now)
+                battle.start_phase("CALL", rules.CALL_SECONDS, battle.now)
             battle.save()
             return view(battle, body.user_id)
 
@@ -561,15 +563,17 @@ def call_stat(battle_id: int, body: CallBody):
         with connection.cursor() as cursor:
             battle = Battle(cursor, battle_id)
             battle.advance()
-            _check_turn(battle, connection, body.user_id, body.round, "STAT_CALL")
+            _check_turn(battle, connection, body.user_id, body.round, "CALL")
 
-            if body.user_id != battle.caller():
-                battle.reject(connection, 403, "Your opponent calls this round")
+            if battle.moves()[body.user_id]["stat"] is not None:
+                battle.reject(connection, 409, "You've already called this round")
             if body.stat not in THEMES[battle.theme()]["stats"]:
                 battle.reject(connection, 400, f"{body.stat} isn't a stat in {THEMES[battle.theme()]['label']}")
 
-            battle.record_call(body.stat)
-            battle.resolve_round(battle.now)
+            battle.record_call(body.user_id, body.stat)
+            # The second call completes the phase; resolve in this transaction.
+            if all(m["stat"] for m in battle.moves().values()):
+                battle.resolve_round(battle.now)
             battle.save()
             return view(battle, body.user_id)
 
@@ -599,7 +603,7 @@ def list_battles(user_id: int):
             cursor.execute(
                 """
                 SELECT b.id, b.status, b.challenger_id, b.opponent_id, b.current_round, b.phase,
-                       b.challenger_wins, b.opponent_wins, b.draws, b.winner_id,
+                       b.challenger_points, b.opponent_points, b.winner_id,
                        b.created_at, b.expires_at, b.finished_at,
                        c.username AS challenger_username, o.username AS opponent_username
                 FROM battles b
@@ -624,9 +628,8 @@ def list_battles(user_id: int):
             "current_round": r["current_round"],
             "phase": r["phase"],
             "score": {
-                "you": r["challenger_wins"] if me_challenger else r["opponent_wins"],
-                "them": r["opponent_wins"] if me_challenger else r["challenger_wins"],
-                "draws": r["draws"],
+                "you": r["challenger_points"] if me_challenger else r["opponent_points"],
+                "them": r["opponent_points"] if me_challenger else r["challenger_points"],
             },
             "winner": None if r["winner_id"] is None else ("you" if r["winner_id"] == user_id else "them"),
             "created_at": r["created_at"],
