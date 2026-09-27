@@ -1,0 +1,147 @@
+rank,player_id,player,country,role,status,include,current_rarity,proposed_rarity,proposed_if_no_legends,override,final_rarity,score,test_matches,test_runs,test_wickets,odi_matches,odi_runs,odi_wickets,t20i_matches,t20i_runs,t20i_wickets,ipl_matches,ipl_runs,ipl_wickets,unverified_formats
+1,732,Sachin Tendulkar,India,Batter,legend,proposed,,Legendary,,,,10.195,200,15921,46,463,18426,154,,,,78,2334,0,T20I
+2,599,Jacques Kallis,South Africa,All-rounder,legend,proposed,,Legendary,,,,9.953,166,13289,292,329,11579,273,,,,98,2427,65,T20I
+3,1,Virat Kohli,India,Batter,current,yes,Common,Legendary,Legendary,,Legendary,9.84,123,9230,0,314,14941,5,125,4188,4,282,9336,4,
+4,679,Muttiah Muralitharan,Sri Lanka,Bowler,legend,proposed,,Legendary,,,,9.176,133,1256,800,350,674,534,,,,66,20,63,T20I
+5,674,Kumar Sangakkara,Sri Lanka,Batter,legend,proposed,,Legendary,,,,7.663,134,12400,0,404,14234,0,56,1382,0,71,1687,0,
+6,634,Ricky Ponting,Australia,Batter,legend,proposed,,Legendary,,,,6.8,168,13378,5,375,13704,3,,,,10,91,0,T20I
+7,2,Rohit Sharma,India,Batter,current,yes,Common,Legendary,Legendary,,Legendary,6.745,67,4301,2,288,11895,9,159,4231,1,281,7329,15,
+8,607,Shaun Pollock,South Africa,All-rounder,legend,proposed,,Legendary,,,,6.609,108,3781,421,303,3519,393,,,,13,147,11,T20I
+9,639,Shane Warne,Australia,Bowler,legend,proposed,,Epic,,,,6.597,145,3154,708,194,1018,293,,,,55,198,57,
+10,2092,Wasim Akram,Pakistan,Bowler,legend,proposed,,Epic,,,,6.547,104,2898,414,356,3717,502,,,,,,,
+11,642,Glenn McGrath,Australia,Bowler,legend,proposed,,Epic,,,,6.492,124,641,563,250,115,381,,,,14,4,12,T20I
+12,586,Chris Gayle,West Indies,All-rounder,current,yes,Common,Epic,Legendary,,Legendary,6.38,103,7214,73,301,10480,167,79,1899,20,141,4965,18,
+13,205,AB de Villiers,South Africa,Batter,legend,proposed,,Epic,,,,6.294,114,8765,2,228,9577,7,78,1672,0,183,5162,0,
+14,3,Rahul Dravid,India,Batter,current,yes,Legendary (inactive),Epic,Legendary,,Legendary,6.227,164,13288,1,344,10889,4,,,,89,2174,0,T20I
+15,7,David Warner,Australia,Batter,current,yes,Rare,Epic,Legendary,,Legendary,5.812,112,8786,4,161,6932,0,110,3277,0,184,6565,0,
+16,692,Anil Kumble,India,Bowler,legend,proposed,,Epic,,,,5.654,132,2506,619,271,938,337,,,,42,35,45,
+17,676,Mahela Jayawardene,Sri Lanka,Batter,current,yes,Common,Epic,Legendary,,Legendary,5.649,149,11814,6,448,12650,8,,,,80,1802,0,T20I
+18,958,Steve Waugh,Australia,Batter,legend,proposed,,Epic,,,,5.648,168,10927,92,325,7569,195,,,,,,,
+19,589,Brian Lara,West Indies,Batter,legend,proposed,,Epic,,,,5.587,131,11953,0,299,10405,4,,,,,,,
+20,5,MS Dhoni,India,Batter,current,yes,Epic (inactive),Epic,Legendary,,Legendary,5.423,90,4876,0,350,10773,1,98,1617,0,277,5439,0,
+21,27272,Kapil Dev,India,All-rounder,legend,proposed,,Rare,,,,5.226,131,5248,434,225,3783,253,,,,,,,
+22,28,Dale Steyn,South Africa,Bowler,current,yes,Rare,Rare,Legendary,,Legendary,5.028,93,1251,439,125,365,196,47,21,64,95,167,97,
+23,20,Hashim Amla,South Africa,Batter,current,yes,Common,Rare,Epic,,Epic,4.994,124,9282,0,181,8113,0,44,1277,0,16,577,0,
+24,689,Sourav Ganguly,India,Batter,legend,proposed,,Rare,,,,4.989,113,7212,32,311,11363,100,,,,59,1349,10,
+25,41,Babar Azam,Pakistan,Batter,current,yes,Common,Rare,Epic,,Epic,4.941,66,4771,2,143,6626,0,145,4596,0,,,,
+26,705,Shahid Afridi,Pakistan,All-rounder,legend,proposed,,Rare,,,,4.885,27,1716,48,398,8064,395,99,1416,98,10,81,9,
+27,695,Shane Watson,Australia,All-rounder,current,yes,Rare,Rare,Epic,,Epic,4.869,59,3731,75,190,5757,168,58,1462,48,145,3874,92,
+28,697,Inzamam-ul-Haq,Pakistan,Batter,legend,proposed,,Rare,,,,4.857,120,8830,0,378,11739,3,,,,,,,T20I
+29,969,Waqar Younis,Pakistan,Bowler,legend,proposed,,Rare,,,,4.79,87,1010,373,262,969,416,,,,,,,
+30,686,Virender Sehwag,India,All-rounder,legend,proposed,,Rare,,,,4.746,104,8586,40,251,8273,96,,,,104,2728,6,T20I
+31,27274,Curtly Ambrose,West Indies,Bowler,legend,proposed,,Rare,,,,4.718,98,1439,405,176,639,225,,,,,,,
+32,4,Jasprit Bumrah,India,Bowler,current,yes,Rare,Rare,Epic,,Epic,4.496,52,348,234,91,111,151,95,12,121,158,75,187,
+33,76,Trent Boult,New Zealand,Bowler,current,yes,Common,Rare,Epic,,Epic,4.06,78,759,317,114,216,211,61,58,83,124,93,145,
+34,24,Quinton de Kock,South Africa,Batter,current,yes,Rare,Rare,Epic,,Epic,4.016,54,3300,0,162,7137,0,110,3095,0,118,3441,0,
+35,170,Jos Buttler,England,Batter,current,yes,Rare,Rare,Epic,,Epic,3.988,57,2907,0,204,5678,0,163,4384,0,138,4646,0,
+36,690,Yuvraj Singh,India,All-rounder,current,yes,Epic,Rare,Epic,,Epic,3.806,40,1900,10,304,8701,111,58,1177,29,132,2750,36,
+37,125,Sikandar Raza,Zimbabwe,All-rounder,current,yes,Common,Rare,Epic,,Epic,3.725,22,1434,40,159,4704,98,144,3244,114,9,182,3,
+38,643,Kevin Pietersen,England,Batter,current,yes,Common,Rare,Epic,,Epic,3.671,104,8181,10,136,4440,7,37,1176,1,36,1001,7,
+39,16,Josh Hazlewood,Australia,Bowler,current,yes,Common,Rare,Epic,,Epic,3.592,78,575,303,97,135,144,60,29,79,52,19,72,
+40,638,Adam Gilchrist,Australia,Batter,legend,proposed,,Rare,,,,3.578,96,5570,0,287,9619,0,,,,80,2069,1,T20I
+41,22,Faf du Plessis,South Africa,Batter,current,yes,Common,Common,Epic,,Epic,3.555,69,4163,0,143,5507,2,50,1528,0,154,4773,0,
+42,652,Brendon McCullum,New Zealand,Batter,current,yes,Common,Common,Rare,,Rare,3.51,101,6453,1,260,6083,0,71,2140,0,109,2880,0,
+43,780,Mitchell Johnson,Australia,Bowler,current,yes,Common,Common,Rare,,Rare,3.47,73,2065,313,153,951,239,,,,54,167,61,T20I
+44,118,Martin Guptill,New Zealand,Batter,current,yes,Common,Common,Rare,,Rare,3.423,47,2586,8,198,7346,4,122,3531,0,13,270,0,
+45,728,Michael Hussey,Australia,Batter,current,yes,Common,Common,Rare,,Rare,3.401,79,6235,7,185,5442,2,,,,59,1977,0,T20I
+46,704,Abdul Razzaq,Pakistan,All-rounder,current,yes,Common,Common,Rare,,Rare,3.225,46,1946,100,265,5080,269,32,393,20,,,,
+47,27273,Sunil Gavaskar,India,Batter,legend,proposed,,Common,,,,3.215,125,10122,1,108,3092,1,,,,,,,
+48,191,Glenn Maxwell,Australia,All-rounder,current,yes,Common,Common,Rare,,Rare,3.005,7,339,8,149,3990,77,130,2897,51,141,2819,41,
+49,881,Suresh Raina,India,All-rounder,current,yes,Common,Common,Rare,,Rare,2.896,18,768,13,226,5615,36,78,1605,13,204,5528,25,
+50,142,Jonny Bairstow,England,Batter,current,yes,Common,Common,Rare,,Rare,2.806,100,6042,0,107,3868,0,80,1671,0,52,1674,0,
+51,12,Mitchell Marsh,Australia,All-rounder,current,yes,Legendary,Common,Rare,,Rare,2.781,46,2083,51,103,3255,57,88,2313,17,68,1855,37,
+52,279,Aaron Finch,Australia,Batter,current,yes,Rare,Common,Rare,,Rare,2.706,5,278,0,146,5406,4,103,3120,0,92,2091,1,
+53,111,KL Rahul,India,Batter,current,yes,Common,Common,Rare,,Rare,2.656,,,,97,3412,0,72,2265,0,160,5815,0,TEST
+54,281,Travis Head,Australia,Batter,current,yes,Common,Common,Rare,,Rare,2.603,67,4653,16,81,3123,28,53,1335,1,53,1556,3,
+55,203,Mustafizur Rahman,Bangladesh,Bowler,current,yes,Common,Common,Rare,,Rare,2.596,15,66,31,123,179,193,128,119,160,60,13,65,
+56,1117,David Miller,South Africa,Batter,current,yes,Common,Common,Rare,,Rare,2.562,,,,179,4620,0,140,2804,0,152,3288,0,
+57,820,Graeme Swann,England,Bowler,current,yes,Common,Common,Rare,,Rare,2.524,60,1370,255,79,500,104,39,104,51,,,,
+58,688,VVS Laxman,India,Batter,legend,proposed,,Common,,,,2.472,134,8781,2,86,2338,0,,,,20,282,0,
+59,74,Tim Southee,New Zealand,Bowler,current,yes,Common,Common,Rare,,Rare,2.461,,,,161,740,221,126,303,164,54,120,47,TEST
+60,708,Umar Gul,Pakistan,Bowler,current,yes,Epic,Common,Rare,,Rare,2.425,47,577,163,130,457,179,60,165,85,6,39,12,
+61,274,Shaheen Shah Afridi,Pakistan,Bowler,current,yes,Common,Common,Rare,,Rare,2.417,34,269,126,77,332,146,103,345,136,,,,
+62,166,Shai Hope,West Indies,Batter,current,yes,Common,Common,Rare,,Rare,2.368,,,,150,6169,0,70,1743,0,9,183,0,TEST
+63,200,Aiden Markram,South Africa,Batter,current,yes,Rare,Common,Rare,,Rare,2.258,50,3192,6,86,2708,20,77,1966,16,69,1671,6,
+64,193,Kuldeep Yadav,India,Bowler,current,yes,Legendary,Common,Common,,Common,2.211,,,,120,212,194,54,48,95,111,210,112,TEST
+65,853,Saeed Ajmal,Pakistan,Bowler,current,yes,Common,Common,Common,,Common,2.128,35,451,178,113,324,184,,,,,,,T20I
+66,259,Kevin O'Brien,Ireland,All-rounder,current,yes,Legendary,Common,Common,,Common,2.09,3,258,0,153,3619,114,110,1973,58,,,,
+67,895,Imran Tahir,South Africa,Bowler,current,yes,Common,Common,Common,,Common,2.044,20,130,57,107,157,173,38,19,63,59,33,82,
+68,459,Suryakumar Yadav,India,Batter,current,yes,Legendary,Common,Common,,Common,2.016,1,8,0,37,773,0,113,3272,2,179,4581,0,
+69,411,Harry Brook,England,Batter,current,yes,Epic,Common,Common,,Common,1.958,41,3610,1,43,1453,0,71,1702,0,11,190,0,
+70,355,Shubman Gill,India,Batter,current,yes,Common,Common,Common,,Common,1.888,,,,67,3379,0,36,869,0,134,4598,0,TEST
+71,378,Devon Conway,New Zealand,Batter,current,yes,Common,Common,Common,,Common,1.846,36,2761,0,43,1692,0,69,1839,0,29,1080,0,
+72,469,George Dockrell,Ireland,All-rounder,current,yes,Common,Common,Common,,Common,1.83,2,98,3,134,1490,111,159,1426,91,,,,
+73,294,Mark Adair,Ireland,All-rounder,current,yes,Common,Common,Common,,Common,1.744,8,397,28,54,469,71,100,844,142,,,,
+74,812,Ajantha Mendis,Sri Lanka,Bowler,current,yes,Rare,Common,Common,,Common,1.743,19,213,70,87,188,152,39,8,66,10,3,8,
+75,655,Shane Bond,New Zealand,Bowler,current,yes,Common,Common,Common,,Common,1.733,18,168,87,82,292,147,20,21,25,8,1,9,
+76,1115,Marcus Stoinis,Australia,All-rounder,current,yes,Rare,Common,Common,,Common,1.679,,,,71,1495,48,87,1416,53,123,2242,46,
+77,267,Abdur Razzak,Bangladesh,Bowler,current,yes,Common,Common,Common,,Common,1.67,13,245,28,153,779,207,34,41,44,1,0,0,
+78,223,Hardik Pandya,India,All-rounder,current,yes,Rare,Common,Common,,Common,1.603,11,532,17,94,1904,91,,,,162,2955,82,T20I
+79,323,Glenn Phillips,New Zealand,All-rounder,current,yes,Common,Common,Common,,Common,1.569,19,956,33,47,1262,16,97,2286,9,14,132,2,
+80,910,Elton Chigumbura,Zimbabwe,All-rounder,current,yes,Common,Common,Common,,Common,1.483,14,569,21,213,4340,101,57,893,16,,,,
+81,174,Mohammad Nawaz,Pakistan,All-rounder,current,yes,Common,Common,Common,,Common,1.373,6,144,16,44,538,49,98,911,101,,,,
+82,161,Dawid Malan,England,Batter,current,yes,Common,Common,Common,,Common,1.346,22,1074,2,30,1450,1,62,1892,1,1,26,0,
+83,418,Rachin Ravindra,New Zealand,All-rounder,current,yes,Epic,Common,Common,,Common,1.343,24,1865,11,39,1424,21,52,759,26,18,413,0,
+84,354,Cameron Green,Australia,All-rounder,current,yes,Legendary,Common,Common,,Common,1.308,39,1920,39,37,946,21,28,638,14,43,1029,23,
+85,1052,Alex Hales,England,Batter,current,yes,Common,Common,Common,,Common,1.308,11,573,0,70,2419,0,75,2074,0,6,148,0,
+86,1371,Sanju Samson,India,Batter,current,yes,Common,Common,Common,,Common,1.3,,,,16,510,0,70,1558,0,190,5181,0,
+87,238,Dinesh Karthik,India,Batter,current,yes,Common,Common,Common,,Common,1.27,26,1025,0,94,1752,0,60,686,0,257,4842,0,
+88,322,Lockie Ferguson,New Zealand,Bowler,current,yes,Legendary,Common,Common,,Common,1.227,1,1,0,65,122,99,54,38,76,52,72,52,
+89,137,Ben Duckett,England,Batter,current,yes,Common,Common,Common,,Common,1.198,49,3364,0,39,1628,0,21,527,0,,,,
+90,149,Steven Finn,England,Bowler,current,yes,Common,Common,Common,,Common,1.162,36,279,125,69,136,102,,,,,,,T20I
+91,1135,Evin Lewis,West Indies,Batter,current,yes,Common,Common,Common,,Common,1.112,,,,67,2175,0,65,1782,0,27,654,0,
+92,4161,Abhishek Sharma,India,Batter,current,yes,Rare,Common,Common,,Common,1.091,,,,,,,59,1858,10,92,2379,11,
+93,263,Boyd Rankin,Ireland,Bowler,current,yes,Common,Common,Common,,Common,1.061,3,43,8,75,100,106,50,64,55,,,,
+94,1351,Phil Salt,England,Batter,current,yes,Epic,Common,Common,,Common,1.041,,,,33,988,0,65,1852,0,40,1258,0,
+95,510,Brian Bennett,Zimbabwe,Batter,current,yes,Common,Common,Common,,Common,1.017,12,568,6,17,449,1,69,2129,9,,,,
+96,6,Rishabh Pant,India,Batter,current,yes,Rare (inactive),Common,Common,,Common,0.983,,,,31,871,0,76,1209,0,139,3865,0,TEST
+97,404,Michael Bracewell,New Zealand,All-rounder,current,yes,Common,Common,Common,,Common,0.951,10,339,25,48,1042,46,47,434,35,5,58,6,
+98,439,Liam Livingstone,England,All-rounder,current,yes,Common,Common,Common,,Common,0.929,1,16,0,39,932,25,60,955,33,51,1066,13,
+99,473,Saim Ayub,Pakistan,All-rounder,current,yes,Rare,Common,Common,,Common,0.862,9,364,4,17,751,9,67,1298,29,,,,
+100,445,Abrar Ahmed,Pakistan,Bowler,current,yes,Rare,Common,Common,,Common,0.852,10,68,46,19,28,35,38,4,52,,,,
+101,561,Jacob Duffy,New Zealand,Bowler,current,yes,Common,Common,Common,,Common,0.849,4,78,25,24,18,40,48,40,62,6,0,9,
+102,1520,Tim David,Australia,Batter,current,yes,Legendary,Common,Common,,Common,0.834,,,,4,45,1,74,1679,5,66,1151,0,
+103,1461,Ravi Bishnoi,India,Bowler,current,yes,Rare,Common,Common,,Common,0.824,,,,1,4,1,47,65,65,86,45,83,
+104,1226,Tim Seifert,New Zealand,Batter,current,yes,Common,Common,Common,,Common,0.78,,,,4,59,0,90,2279,0,6,45,0,
+105,85,James Neesham,New Zealand,All-rounder,current,yes,Common,Common,Common,,Common,0.732,12,709,14,76,1495,70,,,,14,92,8,T20I
+106,440,Will Jacks,England,All-rounder,current,yes,Common,Common,Common,,Common,0.731,6,234,12,28,777,15,48,684,22,28,602,10,
+107,417,Shreyas Iyer,India,Batter,current,yes,Common,Common,Common,,Common,0.713,14,811,0,,,,,,,147,4229,0,ODI T20I
+108,1408,Nathan Ellis,Australia,Bowler,current,yes,Common,Common,Common,,Common,0.713,,,,26,185,40,39,39,58,17,19,19,
+109,1460,Ruturaj Gaikwad,India,Batter,current,yes,Rare,Common,Common,,Common,0.692,,,,9,228,0,23,633,0,85,2839,0,
+110,480,Yashasvi Jaiswal,India,Batter,current,yes,Legendary,Common,Common,,Common,0.683,,,,6,285,0,23,723,0,82,2593,0,TEST
+111,811,Robin Peterson,South Africa,Bowler,current,yes,Rare,Common,Common,,Common,0.68,15,464,38,79,556,75,,,,5,32,3,T20I
+112,522,Jacob Bethell,England,All-rounder,current,yes,Epic,Common,Common,,Common,0.658,9,579,8,24,712,9,36,786,8,9,163,0,
+113,1427,Finn Allen,New Zealand,Batter,current,yes,Rare,Common,Common,,Common,0.65,,,,22,582,0,62,1663,0,11,349,0,
+114,2133,Rilee Rossouw,South Africa,Batter,current,yes,Epic,Common,Common,,Common,0.629,,,,36,1239,1,29,767,0,22,473,0,
+115,544,Josh Inglis,Australia,Batter,current,yes,Common,Common,Common,,Common,0.568,5,184,0,41,994,0,49,1033,0,17,544,0,
+116,1523,Sherfane Rutherford,West Indies,Batter,current,yes,Common,Common,Common,,Common,0.526,,,,29,849,3,56,902,2,31,520,1,
+117,1599,Varun Chakravarthy,India,Bowler,current,yes,Common,Common,Common,,Common,0.514,,,,4,0,10,,,,94,31,111,T20I
+118,481,Ishan Kishan,India,Batter,current,yes,Common,Common,Common,,Common,0.496,2,78,0,,,,,,,134,3600,0,ODI T20I
+119,337,Al-Amin Hossain,Bangladesh,Bowler,current,yes,Epic,Common,Common,,Common,0.481,7,90,9,15,4,22,31,7,43,,,,
+120,390,Richard Ngarava,Zimbabwe,Bowler,current,yes,Common,Common,Common,,Common,0.469,11,136,25,55,272,70,,,,,,,T20I
+121,187,Malcolm Waller,Zimbabwe,All-rounder,current,yes,Common,Common,Common,,Common,0.467,14,577,8,79,1259,10,32,613,0,,,,
+122,1116,Farhaan Behardien,South Africa,All-rounder,current,yes,Common,Common,Common,,Common,0.453,,,,59,1074,14,38,518,3,3,14,0,
+123,405,Jamie Overton,England,All-rounder,current,yes,Common,Common,Common,,Common,0.452,2,106,4,15,282,16,27,88,31,13,151,14,
+124,1683,Sahibzada Farhan,Pakistan,Batter,current,yes,Common,Common,Common,,Common,0.424,,,,,,,46,1305,0,,,,ODI
+125,1456,Arshdeep Singh,India,Bowler,current,yes,Common,Common,Common,,Common,0.391,,,,,,,,,,97,32,111,ODI T20I
+126,943,Moises Henriques,Australia,All-rounder,current,yes,Common,Common,Common,,Common,0.387,4,164,2,16,117,8,,,,62,1000,42,T20I
+127,325,Dwaine Pretorius,South Africa,All-rounder,current,yes,Common,Common,Common,,Common,0.374,3,83,7,,,,30,261,35,7,44,6,ODI
+128,409,Ryan Rickelton,South Africa,Batter,current,yes,Common,Common,Common,,Common,0.353,15,897,0,17,454,0,,,,26,836,0,T20I
+129,1526,Xavier Bartlett,Australia,Bowler,current,yes,Common,Common,Common,,Common,0.334,,,,9,69,20,22,77,24,13,40,7,
+130,470,Matthew Humphreys,Ireland,Bowler,current,yes,Common,Common,Common,,Common,0.313,5,67,15,6,6,1,20,14,29,,,,
+131,1290,Shivam Dube,India,All-rounder,current,yes,Rare,Common,Common,,Common,0.308,,,,,,,,,,92,2129,6,ODI T20I
+132,1285,Tom Banton,England,Batter,current,yes,Common,Common,Common,,Common,0.284,,,,9,273,0,43,797,0,2,18,0,
+133,1319,Romario Shepherd,West Indies,All-rounder,current,yes,Common,Common,Common,,Common,0.282,,,,42,455,34,,,,33,268,17,T20I
+134,1401,Deepak Hooda,India,All-rounder,current,yes,Epic,Common,Common,,Common,0.274,,,,10,153,3,,,,125,1496,10,T20I
+135,1525,Matthew Short,Australia,All-rounder,current,yes,Common,Common,Common,,Common,0.27,,,,23,462,6,24,416,9,9,177,0,
+136,1545,Tilak Varma,India,Batter,current,yes,Epic,Common,Common,,Common,0.261,,,,5,68,0,,,,68,1858,0,T20I
+137,931,Colin Munro,New Zealand,All-rounder,current,yes,Epic,Common,Common,,Common,0.251,1,15,2,57,1271,7,,,,13,177,0,T20I
+138,247,Ryan Burl,Zimbabwe,All-rounder,current,yes,Common,Common,Common,,Common,0.232,3,24,4,52,938,19,,,,,,,T20I
+139,1143,Rovman Powell,West Indies,Batter,current,yes,Common,Common,Common,,Common,0.215,,,,51,979,3,,,,39,555,1,T20I
+140,1546,Rinku Singh,India,Batter,current,yes,Epic,Common,Common,,Common,0.202,,,,2,55,1,,,,72,1394,0,T20I
+141,556,Dewald Brevis,South Africa,Batter,current,yes,Rare,Common,Common,,Common,0.117,4,138,1,,,,,,,27,606,1,ODI T20I
+142,665,Shaun Tait,Australia,Bowler,current,yes,Common,Common,Common,,Common,0.11,3,20,5,,,,,,,21,23,23,ODI T20I
+143,1592,Ottniel Baartman,South Africa,Bowler,current,yes,Common,Common,Common,,Common,0.043,,,,6,16,8,,,,,,,T20I
+144,446,Mohammad Wasim Jr.,Pakistan,Bowler,current,yes,Common,Common,Common,,Common,0.016,2,55,2,,,,,,,,,,ODI T20I
+145,478,Shamar Joseph,West Indies,Bowler,current,yes,Common,Common,Common,,Common,0.0,,,,,,,,,,1,0,0,TEST ODI T20I
+146,1362,Usman Qadir,Pakistan,Bowler,current,yes,Common,Common,Common,,Common,0.0,,,,,,,,,,,,,ODI T20I

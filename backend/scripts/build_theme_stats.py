@@ -25,6 +25,7 @@ import html
 import json
 import re
 import zipfile
+from pathlib import Path
 from collections import defaultdict
 from datetime import date, datetime
 
@@ -287,6 +288,72 @@ def tournament_row(theme, counters, last):
 
 # ---------------------------------------------------------------------------
 
+LEGENDS_FILE = Path(__file__).resolve().parents[2] / "data" / "legends.json"
+
+
+def legend_titles():
+    if not LEGENDS_FILE.exists():
+        return []
+    return [entry["title"] for entry in json.loads(LEGENDS_FILE.read_text())["legends"]]
+
+
+def build(cursor, extra_player_ids=()):
+    """Build and upsert theme stats; returns the rows. Covers every player with a
+    card definition, every legend in data/legends.json that has a player row,
+    and any extra ids given."""
+    cursor.execute(
+        """
+        SELECT p.id, p.name, p.cricsheet_id, p.wikipedia_title, p.career_stats,
+               COALESCE(bool_or(d.is_active), false) AS active
+        FROM players p LEFT JOIN card_definitions d ON d.player_id = p.id
+        WHERE p.id IN (SELECT player_id FROM card_definitions)
+           OR p.wikipedia_title = ANY(%s)
+           OR p.id = ANY(%s)
+        GROUP BY p.id ORDER BY p.id;
+        """,
+        (legend_titles(), list(extra_player_ids)),
+    )
+    players = cursor.fetchall()
+
+    print(f"fetching {len(players)} Wikipedia articles")
+    texts = fetch_wikitext([p["wikipedia_title"] for p in players if p["wikipedia_title"]])
+    print("aggregating Cricsheet tournaments")
+    tournaments, last_dates = tournament_stats()
+
+    rows = []
+    for p in players:
+        infobox, as_of = infobox_formats(texts.get(p["wikipedia_title"]))
+        career = p["career_stats"] or {}
+        for theme, config in THEMES.items():
+            if config["source"] == "wikipedia":
+                if infobox is None:
+                    row = empty_row(theme, "Wikipedia infobox", verified=False, note="no Wikipedia infobox found")
+                else:
+                    row = format_row(theme, infobox.get(theme), as_of, career.get(CRICSHEET_FORMAT[theme]))
+            else:
+                counters = tournaments[theme].get(p["cricsheet_id"], {}).get(theme)
+                row = tournament_row(theme, counters, last_dates.get(theme))
+            row["player"] = p
+            rows.append(row)
+
+    cursor.executemany(
+        """
+        INSERT INTO player_theme_stats (player_id, theme, stats, matches, source, verified, as_of, notes)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (player_id, theme) DO UPDATE SET
+            stats = EXCLUDED.stats, matches = EXCLUDED.matches, source = EXCLUDED.source,
+            verified = EXCLUDED.verified, as_of = EXCLUDED.as_of, notes = EXCLUDED.notes,
+            updated_at = now();
+        """,
+        [
+            (r["player"]["id"], r["theme"], Jsonb(r["stats"]), r["matches"], r["source"],
+             r["verified"], r["as_of"], r["notes"])
+            for r in rows
+        ],
+    )
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true")
@@ -294,53 +361,7 @@ def main():
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT p.id, p.name, p.cricsheet_id, p.wikipedia_title, p.career_stats,
-                       bool_or(d.is_active) AS active
-                FROM players p JOIN card_definitions d ON d.player_id = p.id
-                GROUP BY p.id ORDER BY p.id;
-                """
-            )
-            players = cursor.fetchall()
-
-            print(f"fetching {len(players)} Wikipedia articles")
-            texts = fetch_wikitext([p["wikipedia_title"] for p in players if p["wikipedia_title"]])
-            print("aggregating Cricsheet tournaments")
-            tournaments, last_dates = tournament_stats()
-
-            rows = []
-            for p in players:
-                infobox, as_of = infobox_formats(texts.get(p["wikipedia_title"]))
-                career = p["career_stats"] or {}
-                for theme, config in THEMES.items():
-                    if config["source"] == "wikipedia":
-                        if infobox is None:
-                            row = empty_row(theme, "Wikipedia infobox", verified=False, note="no Wikipedia infobox found")
-                        else:
-                            row = format_row(theme, infobox.get(theme), as_of, career.get(CRICSHEET_FORMAT[theme]))
-                    else:
-                        counters = tournaments[theme].get(p["cricsheet_id"], {}).get(theme)
-                        row = tournament_row(theme, counters, last_dates.get(theme))
-                    row["player"] = p
-                    rows.append(row)
-
-            cursor.executemany(
-                """
-                INSERT INTO player_theme_stats (player_id, theme, stats, matches, source, verified, as_of, notes)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (player_id, theme) DO UPDATE SET
-                    stats = EXCLUDED.stats, matches = EXCLUDED.matches, source = EXCLUDED.source,
-                    verified = EXCLUDED.verified, as_of = EXCLUDED.as_of, notes = EXCLUDED.notes,
-                    updated_at = now();
-                """,
-                [
-                    (r["player"]["id"], r["theme"], Jsonb(r["stats"]), r["matches"], r["source"],
-                     r["verified"], r["as_of"], r["notes"])
-                    for r in rows
-                ],
-            )
-
+            rows = build(cursor)
             report(rows)
             if args.dry_run:
                 connection.rollback()

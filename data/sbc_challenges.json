@@ -1,0 +1,64 @@
+{
+  "_note": "Seeded by: python -m backend.scripts.seed_sbcs. Upserted by slug; reward editions upserted by key. SBC editions are reward-only (never in packs) with small print runs.",
+  "editions": [
+    {"key": "dhoni-2011-final",  "player": "MS Dhoni",            "rarity": "Legendary", "label": "2011 Final",  "print_run": 25},
+    {"key": "kohli-chase-master", "player": "Virat Kohli",        "rarity": "Legendary", "label": "Chase Master", "print_run": 25},
+    {"key": "shaheen-new-ball",  "player": "Shaheen Shah Afridi", "rarity": "Epic",      "label": "New Ball",     "print_run": 50},
+    {"key": "bumrah-yorker-king", "player": "Jasprit Bumrah",     "rarity": "Legendary", "label": "Yorker King",  "print_run": 25}
+  ],
+  "challenges": [
+    {
+      "slug": "class-of-2011",
+      "title": "Class of 2011",
+      "description": "Three players who took the field at the 2011 World Cup.",
+      "requirements": [
+        {"type": "count", "n": 3},
+        {"type": "played_in", "theme": "ODI_WC", "min": 3}
+      ],
+      "reward": {"cards": ["dhoni-2011-final"]}
+    },
+    {
+      "slug": "around-the-world",
+      "title": "Around the World",
+      "description": "Five players from five different countries.",
+      "requirements": [
+        {"type": "count", "n": 5},
+        {"type": "distinct_countries", "min": 5}
+      ],
+      "reward": {"runs": 300}
+    },
+    {
+      "slug": "the-10k-club",
+      "title": "The 10K Club",
+      "description": "Three cards whose Test runs add up to 10,000 or more.",
+      "requirements": [
+        {"type": "count", "n": 3},
+        {"type": "combined_stat", "theme": "TEST", "stat": "runs", "min": 10000}
+      ],
+      "reward": {"cards": ["kohli-chase-master"]}
+    },
+    {
+      "slug": "border-rivals",
+      "title": "Border Rivals",
+      "description": "An Indian and a Pakistani player, both Rare or better.",
+      "requirements": [
+        {"type": "count", "n": 2},
+        {"type": "country", "country": "India", "min": 1},
+        {"type": "country", "country": "Pakistan", "min": 1},
+        {"type": "min_rarity", "rarity": "Rare"}
+      ],
+      "reward": {"cards": ["shaheen-new-ball"]}
+    },
+    {
+      "slug": "yorker-club",
+      "title": "The Yorker Club",
+      "description": "Three bowlers, all with verified T20I records.",
+      "requirements": [
+        {"type": "count", "n": 3},
+        {"type": "role", "role": "Bowler", "min": 3},
+        {"type": "played_in", "theme": "T20I", "min": 3}
+      ],
+      "reward": {"cards": ["bumrah-yorker-king"]}
+    }
+  ]
+}

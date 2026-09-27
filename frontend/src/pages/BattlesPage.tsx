@@ -7,6 +7,7 @@ import { useToast } from "../toast";
 import { PageHeader } from "../components/Layout";
 import { DeckBuilder } from "../components/DeckBuilder";
 import { useCountdown } from "../useCountdown";
+import { UserLink } from "../components/UserLink";
 
 export function BattlesPage() {
   const { user, users } = useSession();
@@ -64,7 +65,7 @@ export function BattlesPage() {
             <div key={b.id} className="border border-brass/50 bg-brass/5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <span className="font-display text-2xl font-black uppercase">{b.opponent}</span>
+                  <UserLink name={b.opponent} className="font-display text-2xl font-black uppercase" />
                   <span className="ml-3 font-mono text-xs text-mute">challenged you · <Expires at={b.expires_at} /></span>
                 </div>
                 <div className="flex gap-2">
@@ -156,7 +157,7 @@ function Row({ b, action }: { b: BattleSummary; action: ReactNode }) {
     <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-4 py-3">
       <div>
         <span className="font-mono text-xs text-faint">vs</span>{" "}
-        <span className="font-display text-xl font-black uppercase">{b.opponent}</span>
+        <UserLink name={b.opponent} className="font-display text-xl font-black uppercase" />
         <span className={`ml-3 font-mono text-xs ${b.status === "FINISHED" || b.status === "FORFEIT" ? tone : "text-mute"}`}>{outcome}</span>
       </div>
       {action}

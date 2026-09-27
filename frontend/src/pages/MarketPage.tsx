@@ -8,6 +8,7 @@ import { useToast } from "../toast";
 import { runs } from "../format";
 import { PageHeader, RarityFilter } from "../components/Layout";
 import { TradingCard } from "../components/TradingCard";
+import { UserLink } from "../components/UserLink";
 import { EmptyState } from "./CollectionPage";
 
 export function MarketPage() {
@@ -95,7 +96,7 @@ function ListingTile({ listing }: { listing: MarketListing }) {
         <div>
           <div className="font-mono text-lg leading-none text-cream">{runs(listing.price)}</div>
           <div className="mt-1.5 truncate font-mono text-[10px] tracking-[0.12em] text-faint uppercase">
-            by {mine ? "you" : listing.seller_username}
+            by {mine ? "you" : <UserLink name={listing.seller_username} />}
           </div>
         </div>
         {mine ? (

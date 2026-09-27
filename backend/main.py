@@ -2,6 +2,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from backend.database import get_connection
 from backend.auth import current_user_id, require_self, router as auth_router
+from backend.social import router as social_router
+from backend.sbc_routes import router as sbc_router
+from backend.trades import router as trade_router
 from backend.schemas import UserResponse, PlayerCreate, PlayerResponse, CardDefinitionCreate, CardDefinitionResponse, CardInstanceCreate, CardInstanceResponse, CardInstanceDetailResponse, ListingCreate, ListingResponse, GrantCreate, PackOpenRequest, PackOpenResponse, CollectionCardResponse, MarketplaceListingResponse, CardEventResponse, SaleResponse, PlayerDetailResponse, PlayerThemeStatsResponse
 from backend.packs import PACK_TYPES, pick_definitions
 from backend.themes import THEMES
@@ -28,6 +31,9 @@ api.add_middleware(
 
 api.include_router(battle_router)
 api.include_router(auth_router)
+api.include_router(social_router)
+api.include_router(sbc_router)
+api.include_router(trade_router)
 
 SIGNUP_GRANT = Decimal("10000.00")
 MARKET_FEE_RATE = Decimal("0.05")
@@ -40,6 +46,7 @@ def apply_balance_change(
     reason,
     related_listing_id=None,
     related_pack_opening_id=None,
+    related_sbc_completion_id=None,
 ):
     # The only place balances change: the balance update and its ledger row are
     # written together, inside the caller's transaction, so they can never drift.
@@ -57,10 +64,10 @@ def apply_balance_change(
     cursor.execute(
         """
         INSERT INTO currency_ledger
-            (user_id, delta, reason, related_listing_id, related_pack_opening_id)
-        VALUES (%s, %s, %s, %s, %s);
+            (user_id, delta, reason, related_listing_id, related_pack_opening_id, related_sbc_completion_id)
+        VALUES (%s, %s, %s, %s, %s, %s);
         """,
-        (user_id, delta, reason, related_listing_id, related_pack_opening_id),
+        (user_id, delta, reason, related_listing_id, related_pack_opening_id, related_sbc_completion_id),
     )
 
     return updated_user
@@ -117,6 +124,7 @@ def record_card_event(
     price=None,
     related_listing_id=None,
     related_pack_opening_id=None,
+    related_trade_id=None,
 ):
     # Called inside the same transaction as the change it describes, so a card
     # can never change hands (or get listed/delisted) without a history row.
@@ -129,9 +137,10 @@ def record_card_event(
             to_user_id,
             price,
             related_listing_id,
-            related_pack_opening_id
+            related_pack_opening_id,
+            related_trade_id
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
         """,
         (
             card_instance_id,
@@ -141,6 +150,7 @@ def record_card_event(
             price,
             related_listing_id,
             related_pack_opening_id,
+            related_trade_id,
         ),
     )
 
@@ -423,6 +433,8 @@ def get_card_instances():
                     players.role AS player_role,
                     players.country AS player_country,
                     card_definitions.max_supply,
+                    card_definitions.edition_label,
+                    card_instances.burned_at,
                     players.id AS player_id,
                     users.username AS owner_username
                 FROM card_instances
@@ -432,6 +444,7 @@ def get_card_instances():
                     ON card_definitions.player_id = players.id
                 JOIN users
                     ON card_instances.owner_id = users.id
+                WHERE card_instances.burned_at IS NULL
                 ORDER BY card_instances.id;
                 """
             )
@@ -458,6 +471,8 @@ def get_card_instance(card_id: int):
                     players.role AS player_role,
                     players.country AS player_country,
                     card_definitions.max_supply,
+                    card_definitions.edition_label,
+                    card_instances.burned_at,
                     players.id AS player_id,
                     users.username AS owner_username
                 FROM card_instances
@@ -490,7 +505,7 @@ def create_listing(listing:ListingCreate, me: int = Depends(current_user_id)):
 
             cursor.execute(
                 """
-                SELECT owner_id
+                SELECT owner_id, burned_at
                 FROM card_instances
                 WHERE id = %s
                 FOR NO KEY UPDATE;
@@ -502,6 +517,9 @@ def create_listing(listing:ListingCreate, me: int = Depends(current_user_id)):
 
             if card is None:
                 raise HTTPException(status_code=404, detail="Card instance not found")
+
+            if card["burned_at"] is not None:
+                raise HTTPException(status_code=409, detail="That card was destroyed in an SBC")
 
             if card["owner_id"] != listing.seller_id:
                 raise HTTPException(
@@ -831,7 +849,7 @@ def open_pack(request: PackOpenRequest, me: int = Depends(current_user_id)):
                 """
                 SELECT id, rarity, max_supply - minted_count AS remaining
                 FROM card_definitions
-                WHERE is_active AND minted_count < max_supply;
+                WHERE is_active AND edition = 'BASE' AND minted_count < max_supply;
                 """
             )
 
@@ -896,6 +914,8 @@ def open_pack(request: PackOpenRequest, me: int = Depends(current_user_id)):
                     players.role AS player_role,
                     players.country AS player_country,
                     card_definitions.max_supply,
+                    card_definitions.edition_label,
+                    card_instances.burned_at,
                     players.id AS player_id,
                     users.username AS owner_username
                 FROM card_instances
@@ -971,11 +991,17 @@ def get_user_collection(user_id: int):
                     players.role AS player_role,
                     players.country AS player_country,
                     card_definitions.max_supply,
+                    card_definitions.edition_label,
+                    card_instances.burned_at,
                     players.id AS player_id,
                     users.username AS owner_username,
                     listings.id AS active_listing_id,
                     listings.price AS listed_price,
-                    (SELECT max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity))
+                    EXISTS (SELECT 1 FROM battles b
+                            WHERE b.status IN ('PENDING', 'ACTIVE')
+                              AND card_instances.id = ANY (b.challenger_card_ids || COALESCE(b.opponent_card_ids, '{}'))) AS in_battle,
+                    (SELECT COALESCE(max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity)) FILTER (WHERE d2.is_active),
+                                 max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity)))
                        FROM card_definitions d2 WHERE d2.player_id = players.id) AS tier_rank
                 FROM card_instances
                 JOIN card_definitions
@@ -987,7 +1013,7 @@ def get_user_collection(user_id: int):
                 LEFT JOIN listings
                     ON listings.card_instance_id = card_instances.id
                     AND listings.status = 'ACTIVE'
-                WHERE card_instances.owner_id = %s
+                WHERE card_instances.owner_id = %s AND card_instances.burned_at IS NULL
                 ORDER BY card_instances.id;
                 """,
                 (user_id,),
@@ -1025,6 +1051,8 @@ def get_marketplace(
                     players.role AS player_role,
                     players.country AS player_country,
                     card_definitions.max_supply,
+                    card_definitions.edition_label,
+                    card_instances.burned_at,
                     players.id AS player_id,
                     listings.seller_id,
                     users.username AS seller_username,
@@ -1086,6 +1114,7 @@ def get_card_history(card_id: int):
                     card_ownership_events.price,
                     card_ownership_events.related_listing_id,
                     card_ownership_events.related_pack_opening_id,
+                    card_ownership_events.related_trade_id,
                     card_ownership_events.created_at
                 FROM card_ownership_events
                 LEFT JOIN users AS from_user

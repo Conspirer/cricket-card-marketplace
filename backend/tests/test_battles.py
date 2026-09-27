@@ -190,19 +190,48 @@ def test_regulation_win_is_decided_in_regulation(api, db, setup):
     assert len(view["rounds"]) == 6
 
 
-def test_rare_themes_skipped_when_decks_lack_data(api, db, setup):
+def test_themes_are_only_drawn_when_both_players_can_play_them(api, db, setup):
+    """No card in either deck has rare-theme data: a whole battle (played out by
+    timeouts) must never draw a rare theme."""
     s = setup
     rare = [k for k, c in THEMES.items() if c["tier"] == "rare"]
     for theme in rare:
-        db.execute(
-            "UPDATE player_theme_stats SET stats = %s WHERE theme = %s",
-            (Jsonb({st: None for st in THEMES[theme]["stats"]}), theme),
-        )
-    for _ in range(25):
+        db.execute("UPDATE player_theme_stats SET stats = %s WHERE theme = %s",
+                   (Jsonb({st: None for st in THEMES[theme]["stats"]}), theme))
+    for _ in range(12):
         battle_id = start_battle(api, s)
+        expire_phase(db, battle_id, seconds_ago=3600)
+        assert get(api, battle_id, s["alice"])["status"] == "FINISHED"
         themes = db.execute("SELECT themes FROM battles WHERE id = %s", (battle_id,)).fetchone()["themes"]
-        assert len(themes) == rules.MAX_ROUNDS
+        assert len(themes) >= rules.REGULATION_ROUNDS
         assert not set(themes) & set(rare), themes
+
+
+def test_cards_without_data_for_the_theme_cant_be_picked(api, db, setup):
+    s = setup
+    alice = s["alice"]
+    battle_id = start_battle(api, s)
+    theme = get(api, battle_id, alice)["current"]["theme"]["key"]
+    blank = s["decks"][alice][0]
+    # Make Alice's first card a player who didn't play this theme.
+    row = db.execute("SELECT challenger_deck FROM battles WHERE id = %s", (battle_id,)).fetchone()
+    for card in row["challenger_deck"]:
+        if card["card_id"] == blank:
+            card["stats"][theme] = {st: None for st in THEMES[theme]["stats"]}
+    db.execute("UPDATE battles SET challenger_deck = %s WHERE id = %s", (Jsonb(row["challenger_deck"]), battle_id))
+
+    hand = {c["card_id"]: c for c in get(api, battle_id, alice)["hand"]}
+    assert hand[blank]["available"] is False
+    assert all(c["available"] for cid, c in hand.items() if cid != blank)
+    r = api.post(f"/battles/{battle_id}/pick", json={"user_id": alice, "round": 1, "card_id": blank})
+    assert r.status_code == 409 and "no data" in r.json()["detail"]
+
+    # A timed-out pick never lands on it either.
+    expire_phase(db, battle_id)
+    get(api, battle_id, alice)
+    move = db.execute("SELECT card_id, pick_timed_out FROM battle_moves WHERE battle_id = %s AND player_id = %s",
+                      (battle_id, alice)).fetchone()
+    assert move["pick_timed_out"] and move["card_id"] != blank
 
 
 def pick_both(api, s, battle_id, round_number=1, offset=0):
@@ -467,22 +496,35 @@ def test_outcome_and_sudden_death():
     assert rules.sudden_death("ODI", "wickets", a, b)["result"] == 0   # no data both sides: draw
 
 
-def test_rare_theme_eligibility():
-    rich = [{"stats": {"ODI_WC": {"runs": 100}, "CT": {"runs": 50}}} for _ in range(3)]
-    poor = [{"stats": {"ODI_WC": {"runs": 100}, "CT": {"runs": None}}}, {"stats": {}}]
-    assert rules.eligible_rare_themes(rich, rich) == {"ODI_WC", "CT"}
-    assert rules.eligible_rare_themes(rich, poor) == set()   # poor has only 1 ODI_WC card
-    rare = {k for k, c in THEMES.items() if c["tier"] == "rare"}
+def test_round_theme_draw():
     import random
-    rng = random.Random(3)
-    drawn = [t for _ in range(300) for t in rules.draw_themes(rng=rng, rare_allowed=set())]
-    assert not set(drawn) & rare
-    drawn = [t for _ in range(300) for t in rules.draw_themes(rng=rng, rare_allowed=rare)]
-    assert set(drawn) & rare
+    rng = random.Random(7)
+    rare = {k for k, c in THEMES.items() if c["tier"] == "rare"}
+    with_all = [{"stats": {t: {"runs": 1} for t in THEMES}}]
+    only_test = [{"stats": {"TEST": {"runs": 1}}}]
+    no_rare = [{"stats": {t: {"runs": 1} for t in THEMES if t not in rare}}]
+
+    assert rules.playable_themes(with_all, only_test) == {"TEST"}
+    assert {rules.draw_round_theme(with_all, only_test, rng=rng) for _ in range(50)} == {"TEST"}
+    drawn = {rules.draw_round_theme(with_all, no_rare, rng=rng) for _ in range(2000)}
+    assert drawn and not drawn & rare
+    # Back-to-back repeats are avoided when there's another option...
+    assert all(rules.draw_round_theme(with_all, with_all, previous="IPL", rng=rng) != "IPL" for _ in range(300))
+    # ...but not when it's the only playable theme.
+    assert rules.draw_round_theme(with_all, only_test, previous="TEST", rng=rng) == "TEST"
+    # No shared theme at all: still draws something rather than failing.
+    assert rules.draw_round_theme(only_test, [{"stats": {"IPL": {"runs": 1}}}], rng=rng) in THEMES
 
 
-def test_theme_draws_never_repeat_back_to_back():
-    for _ in range(500):
-        themes = rules.draw_themes()
-        assert len(themes) == rules.MAX_ROUNDS
-        assert all(a != b for a, b in zip(themes, themes[1:]))
+def test_pickable_and_sudden_death_stat():
+    a = {"stats": {"ODI": {"runs": 5, "economy": None}}}
+    b = {"stats": {"ODI": {"runs": None, "economy": 4.5}}}
+    blank = {"stats": {}}
+    assert rules.pickable([a, blank], "ODI") == [a]
+    assert rules.pickable([a, b], "ODI", "economy") == [b]
+    assert rules.pickable([blank], "ODI") == [blank]   # nothing has data: don't lock the hand
+    import random
+    rng = random.Random(1)
+    # Only runs exists in both decks, so sudden death is always decided on runs.
+    both = [{"stats": {"ODI": {"runs": 3}}}]
+    assert {rules.draw_sudden_death_stat("ODI", [a], both, rng=rng) for _ in range(50)} == {"runs"}

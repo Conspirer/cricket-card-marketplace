@@ -1,0 +1,28 @@
+{
+  "_note": "Retired greats proposed for the card pool. Identified by English Wikipedia article (resolved via Wikidata -> ESPNcricinfo id -> Cricsheet register). country/role are only used if a player row has to be created. A legend enters the pool only once its row in rarity_review.csv has include=yes.",
+  "legends": [
+    {"title": "Sachin Tendulkar",      "country": "India",        "role": "Batter"},
+    {"title": "Brian Lara",            "country": "West Indies",  "role": "Batter"},
+    {"title": "Ricky Ponting",         "country": "Australia",    "role": "Batter"},
+    {"title": "Jacques Kallis",        "country": "South Africa", "role": "All-rounder"},
+    {"title": "Kumar Sangakkara",      "country": "Sri Lanka",    "role": "Batter"},
+    {"title": "Shane Warne",           "country": "Australia",    "role": "Bowler"},
+    {"title": "Muttiah Muralitharan",  "country": "Sri Lanka",    "role": "Bowler"},
+    {"title": "Glenn McGrath",         "country": "Australia",    "role": "Bowler"},
+    {"title": "Wasim Akram",           "country": "Pakistan",     "role": "Bowler"},
+    {"title": "Waqar Younis",          "country": "Pakistan",     "role": "Bowler"},
+    {"title": "Adam Gilchrist",        "country": "Australia",    "role": "Batter"},
+    {"title": "Sourav Ganguly",        "country": "India",        "role": "Batter"},
+    {"title": "Anil Kumble",           "country": "India",        "role": "Bowler"},
+    {"title": "VVS Laxman",            "country": "India",        "role": "Batter"},
+    {"title": "Virender Sehwag",       "country": "India",        "role": "Batter"},
+    {"title": "Kapil Dev",             "country": "India",        "role": "All-rounder"},
+    {"title": "Sunil Gavaskar",        "country": "India",        "role": "Batter"},
+    {"title": "AB de Villiers",        "country": "South Africa", "role": "Batter"},
+    {"title": "Inzamam-ul-Haq",        "country": "Pakistan",     "role": "Batter"},
+    {"title": "Shaun Pollock",         "country": "South Africa", "role": "All-rounder"},
+    {"title": "Curtly Ambrose",        "country": "West Indies",  "role": "Bowler"},
+    {"title": "Steve Waugh",           "country": "Australia",    "role": "Batter"},
+    {"title": "Shahid Afridi",         "country": "Pakistan",     "role": "All-rounder"}
+  ]
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Card, type CardEvent, type PlayerThemeStats, type Sale, type StatKey } from "../api";
@@ -6,6 +6,7 @@ import { useSession } from "../session";
 import { useToast } from "../toast";
 import { longDate, RARITY_COLOR, runs, serial, shortDate, STAT_LABELS, statValue } from "../format";
 import { TradingCard } from "../components/TradingCard";
+import { UserLink } from "../components/UserLink";
 
 const FEE_RATE = 0.05;
 
@@ -61,7 +62,7 @@ export function CardPage() {
         <div className="mt-6 flex items-center gap-3">
           <span className="h-2 w-2 rounded-full" style={{ background: RARITY_COLOR[card.rarity] }} />
           <span className="eyebrow" style={{ color: RARITY_COLOR[card.rarity] }}>
-            {card.rarity} · {card.player_role} · {card.player_country}
+            {card.rarity}{card.edition_label ? ` · ${card.edition_label} edition` : ""} · {card.player_role} · {card.player_country}
           </span>
         </div>
         <h1 className="mt-3 font-display text-[clamp(3.5rem,8vw,6.5rem)] leading-[0.82] font-black uppercase">
@@ -71,10 +72,19 @@ export function CardPage() {
         <dl className="mt-8 grid grid-cols-3 border-y border-line">
           <Stat label="Serial" value={`#${serial(card.serial_number)}`} />
           <Stat label="Print run" value={String(card.max_supply)} />
-          <Stat label="Owner" value={card.owner_username} small />
+          <Stat label="Owner" value={<UserLink name={card.owner_username} />} small />
         </dl>
 
-        <Actions card={card} activeListing={activeListing} />
+        {card.burned_at ? (
+          <div className="mt-8 border border-leather/50 bg-leather/10 px-5 py-4">
+            <div className="eyebrow !text-leather">Destroyed</div>
+            <p className="mt-1 text-mute">
+              Submitted to a squad challenge on {shortDate(card.burned_at)}. It can't be listed, traded or played.
+            </p>
+          </div>
+        ) : (
+          <Actions card={card} activeListing={activeListing} />
+        )}
 
         {themeStats && <ThemeStatsSection data={themeStats} />}
 
@@ -153,7 +163,7 @@ function ThemeStatsSection({ data }: { data: PlayerThemeStats }) {
   );
 }
 
-function Stat({ label, value, small }: { label: string; value: string; small?: boolean }) {
+function Stat({ label, value, small }: { label: string; value: ReactNode; small?: boolean }) {
   return (
     <div className="min-w-0 border-line py-4 not-last:border-r not-first:pl-4">
       <dt className="eyebrow !text-[10px]">{label}</dt>
@@ -336,6 +346,8 @@ const EVENT_LABEL: Record<CardEvent["event_type"], string> = {
   LISTED: "Listed",
   DELISTED: "Delisted",
   SOLD: "Sold",
+  BURNED: "Destroyed",
+  TRADED: "Traded",
 };
 
 function HistoryRow({ event, first }: { event: CardEvent; first: boolean }) {
@@ -344,37 +356,53 @@ function HistoryRow({ event, first }: { event: CardEvent; first: boolean }) {
       case "PULLED":
         return (
           <>
-            from pack #{event.related_pack_opening_id} by <b>{event.to_username}</b>
+            from pack #{event.related_pack_opening_id} by <b><UserLink name={event.to_username!} /></b>
           </>
         );
       case "MINTED":
         return (
           <>
-            to <b>{event.to_username}</b>
+            to <b><UserLink name={event.to_username!} /></b>
           </>
         );
       case "LISTED":
         return (
           <>
-            by <b>{event.from_username}</b> for {runs(event.price!)}
+            by <b><UserLink name={event.from_username!} /></b> for {runs(event.price!)}
           </>
         );
       case "DELISTED":
         return (
           <>
-            by <b>{event.from_username}</b>
+            by <b><UserLink name={event.from_username!} /></b>
+          </>
+        );
+      case "TRADED":
+        return (
+          <>
+            <b><UserLink name={event.from_username!} /></b> → <b><UserLink name={event.to_username!} /></b> in trade #{event.related_trade_id}
+          </>
+        );
+      case "BURNED":
+        return (
+          <>
+            in a squad challenge by <b><UserLink name={event.from_username!} /></b>
           </>
         );
       case "SOLD":
         return (
           <>
-            <b>{event.from_username}</b> → <b>{event.to_username}</b> for {runs(event.price!)}
+            <b><UserLink name={event.from_username!} /></b> → <b><UserLink name={event.to_username!} /></b> for {runs(event.price!)}
           </>
         );
     }
   })();
 
-  const tone = event.event_type === "SOLD" ? "bg-brass" : event.event_type === "PULLED" ? "bg-pitch" : "bg-line-strong";
+  const tone =
+    event.event_type === "SOLD" || event.event_type === "TRADED" ? "bg-brass"
+    : event.event_type === "PULLED" ? "bg-pitch"
+    : event.event_type === "BURNED" ? "bg-leather"
+    : "bg-line-strong";
 
   return (
     <li className="relative pb-6 pl-6 last:pb-0">

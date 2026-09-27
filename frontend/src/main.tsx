@@ -15,6 +15,9 @@ import { CardPage } from "./pages/CardPage";
 import { BattlesPage } from "./pages/BattlesPage";
 import { BattlePage } from "./pages/BattlePage";
 import { CreditsPage } from "./pages/CreditsPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { SbcPage, SbcsPage } from "./pages/SbcPages";
+import { NewTradePage, TradesPage } from "./pages/TradePages";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: false } },
@@ -34,7 +37,12 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="cards/:id" element={<CardPage />} />
                 <Route path="battles" element={<BattlesPage />} />
                 <Route path="battles/:id" element={<BattlePage />} />
+                <Route path="sbc" element={<SbcsPage />} />
+                <Route path="sbc/:slug" element={<SbcPage />} />
+                <Route path="trades" element={<TradesPage />} />
+                <Route path="trades/new/:username" element={<NewTradePage />} />
                 <Route path="credits" element={<CreditsPage />} />
+                <Route path="u/:username" element={<ProfilePage />} />
               </Route>
             </Routes>
           </BrowserRouter>

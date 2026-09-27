@@ -76,6 +76,8 @@ class CardInstanceDetailResponse(BaseModel):
     max_supply: int
     owner_username: str
     player_id: int
+    edition_label: str | None = None
+    burned_at: datetime | None = None
 
 class ListingCreate(BaseModel):
     card_instance_id: int
@@ -109,6 +111,7 @@ class PackOpenResponse(BaseModel):
 class CollectionCardResponse(CardInstanceDetailResponse):
     player_tier: str
     credits: int
+    in_battle: bool = False
     active_listing_id: int | None
     listed_price: Decimal | None
 
@@ -123,6 +126,7 @@ class MarketplaceListingResponse(BaseModel):
     player_country: str
     max_supply: int
     player_id: int
+    edition_label: str | None = None
     seller_id: int
     seller_username: str
     price: Decimal
@@ -135,6 +139,7 @@ class CardEventResponse(BaseModel):
     price: Decimal | None
     related_listing_id: int | None
     related_pack_opening_id: int | None
+    related_trade_id: int | None = None
     created_at: datetime
 
 class SaleResponse(BaseModel):

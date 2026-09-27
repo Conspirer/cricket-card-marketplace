@@ -242,6 +242,25 @@ body::after {
 .tc__serial { color: var(--color-cream); }
 .tc__serial b { color: var(--accent); font-weight: 500; }
 
+/* SBC reward editions: a filled tag instead of the serial badge. */
+.tc__edition {
+  position: absolute;
+  top: 15cqw;
+  right: 6.5cqw;
+  max-width: 60%;
+  padding: 0.8cqw 2cqw;
+  background: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 3.2cqw;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--color-night);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tc__low {
   position: absolute;
   top: 15cqw;
@@ -405,7 +424,27 @@ body::after {
   to   { background-position: -100% 0, 0 0; }
 }
 
+/* Pull feed ticker: a slow, seamless loop that pauses under the pointer. */
+.ticker__track { animation: ticker 60s linear infinite; }
+.ticker:hover .ticker__track, .ticker:focus-within .ticker__track { animation-play-state: paused; }
+/* Edge fades are overlays that let clicks through. (A mask-image fade would
+   also swallow clicks on links under the faded edges in Chrome.) */
+.ticker__viewport::before,
+.ticker__viewport::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  z-index: 1;
+  pointer-events: none;
+}
+.ticker__viewport::before { left: 0; background: linear-gradient(to right, var(--color-surface), transparent); }
+.ticker__viewport::after { right: 0; background: linear-gradient(to left, var(--color-surface), transparent); }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
 @media (prefers-reduced-motion: reduce) {
+  .ticker__track { animation: none; }
   .theme-rare { animation: none; }
   .tc__holo { animation: none; }
   .tc__body, .pack__foil::after { transition: none; }

@@ -24,6 +24,28 @@ export type PlayerThemeStats = { hidden: boolean; themes: ThemeStats[] };
 
 export type User = { id: number; username: string; balance: string };
 
+// A card as shown publicly (feed, showcases): identity only.
+export type PublicCard = {
+  card_instance_id: number;
+  card_definition_id: number;
+  serial_number: number;
+  rarity: Rarity;
+  max_supply: number;
+  player_name: string;
+  player_role: string;
+  player_country: string;
+};
+
+export type FeedItem = PublicCard & { event_id: number; created_at: string; username: string };
+
+export type Profile = {
+  username: string;
+  joined: string;
+  collection: { total: number } & Record<Rarity, number>;
+  battles: { wins: number; losses: number; draws: number };
+  showcase: (PublicCard & { position: number })[];
+};
+
 export type Card = {
   id: number;
   card_definition_id: number;
@@ -35,6 +57,8 @@ export type Card = {
   max_supply: number;
   owner_username: string;
   player_id: number;
+  edition_label?: string | null; // set on SBC reward editions
+  burned_at?: string | null; // destroyed in an SBC
 };
 
 export type CollectionCard = Card & {
@@ -42,6 +66,7 @@ export type CollectionCard = Card & {
   listed_price: string | null;
   player_tier: Rarity;
   credits: number;
+  in_battle: boolean;
 };
 
 // ---- Battles --------------------------------------------------------------
@@ -106,7 +131,7 @@ export type BattleView = {
   score: { you: number; them: number };
   winner: Who | null;
   decided_by: "regulation" | "sudden_death" | "draw" | null; // null while playing or after a forfeit
-  hand: (BattleCard & { used: boolean })[];
+  hand: (BattleCard & { used: boolean; available?: boolean })[]; // available: can be picked this round
   current: {
     round: number;
     sudden_death: boolean;
@@ -168,12 +193,13 @@ export type PackResult = {
 };
 
 export type CardEvent = {
-  event_type: "MINTED" | "PULLED" | "LISTED" | "DELISTED" | "SOLD";
+  event_type: "MINTED" | "PULLED" | "LISTED" | "DELISTED" | "SOLD" | "BURNED" | "TRADED";
   from_username: string | null;
   to_username: string | null;
   price: string | null;
   related_listing_id: number | null;
   related_pack_opening_id: number | null;
+  related_trade_id?: number | null;
   created_at: string;
 };
 
@@ -185,6 +211,81 @@ export type Listing = {
   seller_id: number;
   price: string;
   status: string;
+};
+
+// ---- SBCs -----------------------------------------------------------------
+
+export type SbcRewardCard = {
+  edition_key: string;
+  edition_label: string;
+  rarity: Rarity;
+  max_supply: number;
+  minted_count: number;
+  player_name: string;
+  player_role: string;
+  player_country: string;
+};
+
+export type Sbc = {
+  slug: string;
+  title: string;
+  description: string;
+  requirements: string[];
+  card_count: number;
+  reward: { cards: SbcRewardCard[]; runs: number };
+  starts_at: string | null;
+  ends_at: string | null;
+  open: boolean;
+  max_completions: number;
+  completed: number;
+};
+
+export type SbcCheck = {
+  checklist: { rule: string; ok: boolean; progress: string }[];
+  blocked: Record<string, string>;
+  ready: boolean;
+};
+
+export type SbcResult = { completion_id: number; burned: number[]; reward_cards: number[]; reward_runs: number };
+
+// ---- Trades ---------------------------------------------------------------
+
+export type TradeCard = PublicCard & { edition_label: string | null; listed: boolean; in_battle?: boolean };
+
+export type TradeStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "EXPIRED" | "INVALID";
+
+export type Trade = {
+  id: number;
+  status: TradeStatus;
+  invalid_reason: string | null;
+  proposer: string;
+  recipient: string;
+  role: "proposer" | "recipient";
+  created_at: string;
+  expires_at: string;
+  resolved_at: string | null;
+  offered: TradeCard[]; // the proposer gives these
+  requested: TradeCard[]; // the recipient gives these
+  problems: { permanent: boolean; message: string }[];
+};
+
+export type TradeRules = {
+  min_cards_per_side: number;
+  max_cards_per_side: number;
+  expiry_hours: number;
+  min_account_age_days: number;
+  min_battles_finished: number;
+  max_accepted_per_day: number;
+};
+
+export type TradeEligibility = {
+  eligible: boolean;
+  reasons: string[];
+  joined: string;
+  battles_finished: number;
+  trades_today: number;
+  at_daily_limit: boolean;
+  rules: TradeRules;
 };
 
 export class ApiError extends Error {
@@ -232,6 +333,11 @@ export const api = {
   register: (username: string, password: string) => post<User>("/auth/register", { username, password }),
   login: (username: string, password: string) => post<User>("/auth/login", { username, password }),
   logout: () => post<{ ok: boolean }>("/auth/logout"),
+  feed: () => request<FeedItem[]>("/feed"),
+  profile: (username: string) => request<Profile>(`/profiles/${encodeURIComponent(username)}`),
+  setShowcase: (cardIds: number[]) =>
+    request<PublicCard[]>("/me/showcase", { method: "PUT", body: JSON.stringify({ card_ids: cardIds }) }),
+  visit: () => post<{ ok: boolean }>("/me/visit"),
   packs: () => request<PackType[]>("/packs"),
   openPack: (userId: number, packType: string) =>
     post<PackResult>("/packs/open", { user_id: userId, pack_type: packType }),
@@ -249,6 +355,20 @@ export const api = {
     post<Listing>(`/listings/${listingId}/cancel?seller_id=${sellerId}`),
   buy: (listingId: number, buyerId: number) =>
     post<Listing>(`/listings/${listingId}/buy?buyer_id=${buyerId}`),
+  sbcs: () => request<Sbc[]>("/sbcs"),
+  sbc: (slug: string) => request<Sbc>(`/sbcs/${encodeURIComponent(slug)}`),
+  checkSbc: (slug: string, cardIds: number[]) =>
+    post<SbcCheck>(`/sbcs/${encodeURIComponent(slug)}/check`, { card_ids: cardIds }),
+  submitSbc: (slug: string, cardIds: number[]) =>
+    post<SbcResult>(`/sbcs/${encodeURIComponent(slug)}/submit`, { card_ids: cardIds }),
+  trades: () => request<{ incoming: Trade[]; outgoing: Trade[]; history: Trade[] }>("/trades"),
+  tradeEligibility: () => request<TradeEligibility>("/trades/eligibility"),
+  tradeableCards: (username: string) => request<TradeCard[]>(`/profiles/${encodeURIComponent(username)}/cards`),
+  proposeTrade: (recipient: string, offered: number[], requested: number[]) =>
+    post<Trade>("/trades", { recipient, offered_card_ids: offered, requested_card_ids: requested }),
+  acceptTrade: (id: number) => post<Trade>(`/trades/${id}/accept`),
+  declineTrade: (id: number) => post<Trade>(`/trades/${id}/decline`),
+  cancelTrade: (id: number) => post<Trade>(`/trades/${id}/cancel`),
   battles: (userId: number) => request<BattleSummary[]>(`/users/${userId}/battles`),
   battle: (id: number, userId: number) => request<BattleView>(`/battles/${id}?user_id=${userId}`),
   challenge: (challengerId: number, opponentId: number, cardIds: number[]) =>

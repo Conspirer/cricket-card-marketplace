@@ -1,15 +1,21 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useSession } from "../session";
 import { runs } from "../format";
 import { BallSeam } from "./CardBack";
 import { AuthPage } from "../pages/AuthPage";
+import { FeedTicker } from "./FeedTicker";
+import { UserLink } from "./UserLink";
+import { api } from "../api";
+import { useQuery } from "@tanstack/react-query";
 
 const NAV = [
   { to: "/", label: "Packs" },
   { to: "/collection", label: "Collection" },
   { to: "/market", label: "Market" },
   { to: "/battles", label: "Battles" },
+  { to: "/sbc", label: "SBCs" },
+  { to: "/trades", label: "Trades" },
 ];
 
 export function Layout() {
@@ -17,6 +23,15 @@ export function Layout() {
   const { pathname } = useLocation();
   // Everything except the credits page needs an account.
   const needsLogin = !loading && !user && pathname !== "/credits";
+
+  // Incoming offers badge on the nav.
+  const { data: trades } = useQuery({ queryKey: ["trades"], queryFn: api.trades, enabled: !!user, refetchInterval: 30_000 });
+  const incoming = trades?.incoming.length ?? 0;
+
+  // Playtest logging: one row per user per day, counted server-side.
+  useEffect(() => {
+    if (user) api.visit().catch(() => {});
+  }, [user, pathname]);
 
   return (
     <div className="min-h-screen">
@@ -27,14 +42,15 @@ export function Layout() {
             <span className="hidden font-display text-2xl font-black tracking-[0.18em] min-[420px]:inline">CREASE</span>
           </NavLink>
 
-          <nav className={`flex h-full items-stretch gap-1 sm:gap-2 ${user ? "" : "invisible"}`}>
+          {/* Scrolls sideways on phones rather than wrapping. */}
+          <nav className={`flex h-full min-w-0 items-stretch gap-1 overflow-x-auto [scrollbar-width:none] sm:gap-2 ${user ? "" : "invisible"}`}>
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === "/"}
                 className={({ isActive }) =>
-                  `relative flex items-center px-2 font-display text-[15px] font-bold tracking-[0.12em] uppercase transition-colors sm:px-3 ${
+                  `relative flex shrink-0 items-center gap-1.5 px-2 font-display text-[15px] font-bold tracking-[0.12em] uppercase transition-colors sm:px-3 ${
                     isActive
                       ? "text-cream after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-brass sm:after:inset-x-3"
                       : "text-mute hover:text-cream"
@@ -42,6 +58,11 @@ export function Layout() {
                 }
               >
                 {item.label}
+                {item.to === "/trades" && incoming > 0 && (
+                  <span className="rounded-full bg-leather px-1.5 font-mono text-[10px] leading-4 tracking-normal text-cream" aria-label={`${incoming} incoming offers`}>
+                    {incoming}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -57,6 +78,7 @@ export function Layout() {
           </div>
         </div>
         {/* Phones: balance and account drop to their own row. */}
+        {user && <FeedTicker />}
         {user && (
           <div className="flex items-center justify-between border-t border-line px-4 py-2 sm:hidden">
             <span className="font-mono text-xs text-brass-bright">{runs(user.balance)} RUNS</span>
@@ -83,9 +105,9 @@ function UserMenu() {
   const { user, logout } = useSession();
   return (
     <div className="flex items-center gap-3">
-      <span className="max-w-[140px] truncate font-display text-lg font-extrabold tracking-[0.04em] uppercase">
-        {user?.username}
-      </span>
+      {user && (
+        <UserLink name={user.username} className="max-w-[140px] truncate font-display text-lg font-extrabold tracking-[0.04em] uppercase" />
+      )}
       <button
         onClick={() => logout()}
         className="font-mono text-[11px] tracking-[0.12em] text-faint uppercase hover:text-cream"

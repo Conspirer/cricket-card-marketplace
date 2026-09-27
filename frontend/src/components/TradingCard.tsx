@@ -5,7 +5,7 @@ import { countryCode, serial } from "../format";
 export type CardFace = Pick<
   Card,
   "serial_number" | "rarity" | "player_name" | "player_role" | "player_country" | "max_supply"
->;
+> & { edition_label?: string | null };
 
 // Surname = last word plus any lowercase particles before it ("de Kock").
 function splitName(name: string) {
@@ -25,7 +25,9 @@ type Props = {
 // Only call a serial out when it's genuinely scarce relative to its print run,
 // otherwise small runs would badge nearly every card.
 function serialBadge(serialNumber: number, maxSupply: number) {
+  if (serialNumber === 1 && maxSupply === 1) return "One of one";
   if (serialNumber === 1) return "First print";
+  if (serialNumber === maxSupply) return "Last print";
   if (serialNumber <= 10 && maxSupply >= 100) return "Low serial";
   return null;
 }
@@ -74,7 +76,11 @@ export function TradingCard({ card, size = "md", tilt = true }: Props) {
             <span className="tc__rarity">{card.rarity}</span>
             <span className="tc__country">{countryCode(card.player_country)}</span>
           </div>
-          {badge && <span className="tc__low">{badge}</span>}
+          {card.edition_label ? (
+            <span className="tc__edition">{card.edition_label}</span>
+          ) : (
+            badge && <span className="tc__low">{badge}</span>
+          )}
 
           <div className="tc__name">
             {first && <span className="tc__first">{first}</span>}

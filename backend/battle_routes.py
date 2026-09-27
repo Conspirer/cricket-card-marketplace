@@ -56,9 +56,10 @@ class CallBody(BaseModel):
 # ---------------------------------------------------------------------------
 
 _CARD_SELECT = """
-    SELECT ci.id AS card_id, ci.owner_id, ci.serial_number, d.rarity, d.max_supply,
+    SELECT ci.id AS card_id, ci.owner_id, ci.burned_at, ci.serial_number, d.rarity, d.max_supply,
            p.id AS player_id, p.name, p.role, p.country,
-           (SELECT max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity))
+           (SELECT COALESCE(max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity)) FILTER (WHERE d2.is_active),
+                                 max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d2.rarity)))
               FROM card_definitions d2 WHERE d2.player_id = p.id) AS tier_rank
 """
 # Only verified rows: an unverified stat counts as no data rather than risk a wrong number.
@@ -73,6 +74,14 @@ _CARD_FROM = """
     JOIN players p ON p.id = d.player_id
     WHERE ci.id = ANY(%s);
 """
+
+
+def lock_cards(cursor, card_ids):
+    """Row-lock deck cards (ascending id) before validating them, so an SBC
+    can't burn a card between our check and the battle being saved. Lock
+    order: [battle row ->] cards; the SBC path is user -> cards, and neither
+    takes the other's first lock second, so there's no cycle."""
+    cursor.execute("SELECT id FROM card_instances WHERE id = ANY(%s) ORDER BY id FOR NO KEY UPDATE;", (list(card_ids),))
 
 
 def load_deck(cursor, user_id, card_ids, with_stats=False):
@@ -91,6 +100,8 @@ def load_deck(cursor, user_id, card_ids, with_stats=False):
         row = found[card_id]
         if row["owner_id"] != user_id:
             raise HTTPException(403, f"You don't own card #{card_id}")
+        if row["burned_at"] is not None:
+            raise HTTPException(409, f"Card #{card_id} was destroyed in an SBC")
         tier = rules.TIER_ORDER[row["tier_rank"] - 1]
         card = {
             "card_id": card_id,
@@ -183,12 +194,29 @@ class Battle:
         used = {r["card_id"] for r in self.cursor.fetchall()}
         return [c["card_id"] for c in deck if c["card_id"] not in used]
 
+    def pickable(self, user_id):
+        """Cards this player may pick now: unused (any, in sudden death) and
+        with data for this round's theme, or for the sudden-death stat."""
+        b = self.b
+        cards = [self.card(user_id, cid) for cid in self.playable(user_id)]
+        stat = b["sudden_death_stat"] if rules.is_sudden_death(b["current_round"]) else None
+        return [c["card_id"] for c in rules.pickable(cards, self.theme(), stat)]
+
     def start_phase(self, phase, seconds, base):
         self.b["phase"] = phase
         self.b["phase_deadline"] = base + timedelta(seconds=seconds)
 
     def begin_round(self, number, base):
-        self.b["current_round"] = number
+        """Start a round. Its theme is drawn now, from themes both players can
+        still play a card with data for; sudden death also draws its stat."""
+        b = self.b
+        b["current_round"] = number
+        hands = [[self.card(u, cid) for cid in self.playable(u)] for u in self.players()]
+        themes = list(b["themes"] or [])[: number - 1]
+        themes.append(rules.draw_round_theme(*hands, previous=themes[-1] if themes else None))
+        b["themes"] = themes
+        if rules.is_sudden_death(number):
+            b["sudden_death_stat"] = rules.draw_sudden_death_stat(themes[-1], *hands)
         self.start_phase("CARD_PICK", rules.CARD_PICK_SECONDS, base)
 
     def finish(self, at, status="FINISHED", winner_id=None):
@@ -321,7 +349,7 @@ class Battle:
                 moves = self.moves()
                 for user_id in self.players():
                     if user_id not in moves:
-                        self.record_pick(user_id, rules._rng.choice(self.playable(user_id)), timed_out=True)
+                        self.record_pick(user_id, rules._rng.choice(self.pickable(user_id)), timed_out=True)
                 self.after_picks(deadline)
             elif b["phase"] == "CALL":
                 moves = self.moves()
@@ -461,7 +489,11 @@ def view(battle, viewer_id):
         })
 
     used = {r[f"{me}_card_id"] for r in resolved if not rules.is_sudden_death(r["round"])}
-    out["hand"] = [dict(public_card(c), used=c["card_id"] in used) for c in battle.deck(viewer_id)]
+    # "available": can be picked this round (unused, and has data for the theme).
+    # Only ever about the viewer's own cards; says nothing about any number.
+    available = set(battle.pickable(viewer_id)) if b["status"] == "ACTIVE" and b["phase"] == "CARD_PICK" else set()
+    out["hand"] = [dict(public_card(c), used=c["card_id"] in used, available=c["card_id"] in available)
+                   for c in battle.deck(viewer_id)]
 
     if b["status"] == "ACTIVE" and b["phase"] in ("CARD_PICK", "CALL"):
         moves = battle.moves()
@@ -503,6 +535,7 @@ def create_challenge(body: ChallengeCreate, me: int = Depends(current_user_id)):
             cursor.execute("SELECT id FROM users WHERE id = ANY(%s);", ([body.challenger_id, body.opponent_id],))
             if len(cursor.fetchall()) != 2:
                 raise HTTPException(404, "User not found")
+            lock_cards(cursor, body.card_ids)
             load_deck(cursor, body.challenger_id, body.card_ids)
             cursor.execute(
                 """
@@ -529,6 +562,7 @@ def accept_challenge(battle_id: int, body: AcceptBody, me: int = Depends(current
             if b["status"] != "PENDING":
                 battle.reject(connection, 409, f"This challenge is {b['status'].lower()}")
 
+            lock_cards(cursor, set(body.card_ids) | set(b["challenger_card_ids"]))
             opponent_deck = load_deck(cursor, body.user_id, body.card_ids, with_stats=True)
             try:
                 challenger_deck = load_deck(cursor, b["challenger_id"], b["challenger_card_ids"], with_stats=True)
@@ -540,12 +574,9 @@ def accept_challenge(battle_id: int, body: AcceptBody, me: int = Depends(current
                 opponent_card_ids=body.card_ids,
                 challenger_deck=challenger_deck,
                 opponent_deck=opponent_deck,
-                # Rare themes only when both decks have enough cards with data for them.
-                themes=rules.draw_themes(rare_allowed=rules.eligible_rare_themes(challenger_deck, opponent_deck)),
+                themes=[],  # drawn round by round, from what both players can still play
                 started_at=battle.now,
             )
-            # Drawn now, shown only when sudden death starts.
-            b["sudden_death_stat"] = rules.draw_sudden_death_stat(b["themes"][rules.MAX_ROUNDS - 1])
             battle.begin_round(1, battle.now)
             battle.save()
             return view(battle, body.user_id)
@@ -611,6 +642,8 @@ def pick_card(battle_id: int, body: PickBody, me: int = Depends(current_user_id)
                 battle.reject(connection, 400, "That card isn't in your deck")
             if body.card_id not in battle.playable(body.user_id):
                 battle.reject(connection, 409, "You've already played that card")
+            if body.card_id not in battle.pickable(body.user_id):
+                battle.reject(connection, 409, f"{battle.card(body.user_id, body.card_id)['name']} has no data for {THEMES[battle.theme()]['label']}")
 
             battle.record_pick(body.user_id, body.card_id)
             if len(battle.moves()) == 2:

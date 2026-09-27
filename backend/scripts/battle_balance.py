@@ -31,7 +31,8 @@ def load_pool():
             cursor.execute(
                 """
                 SELECT p.id, p.name, p.role,
-                       max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d.rarity)) AS tier_rank,
+                       COALESCE(max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d.rarity)) FILTER (WHERE d.is_active),
+                                max(array_position(ARRAY['Common', 'Rare', 'Epic', 'Legendary'], d.rarity))) AS tier_rank,
                        COALESCE((SELECT jsonb_object_agg(t.theme, t.stats) FROM player_theme_stats t
                                   WHERE t.player_id = p.id AND t.verified), '{}'::jsonb) AS stats
                 FROM players p JOIN card_definitions d ON d.player_id = p.id
@@ -125,18 +126,22 @@ def random_deck(pool, rng, min_cost=0, max_cost=rules.CREDIT_CAP):
 
 def play(deck_a, deck_b, bot_a, bot_b, rng, log, battles_log=None):
     """One battle; A is the challenger. Returns 1 / -1 / 0 for A win / B win / draw."""
-    themes = rules.draw_themes(rng=rng, rare_allowed=rules.eligible_rare_themes(deck_a, deck_b))
-    sd_stat = rules.draw_sudden_death_stat(themes[rules.MAX_ROUNDS - 1], rng=rng)
     used = {"A": set(), "B": set()}
+    previous = None
     points = {"A": 0, "B": 0}
     decks, bots = {"A": deck_a, "B": deck_b}, {"A": bot_a, "B": bot_b}
 
     number = 0
     for number in range(1, rules.MAX_ROUNDS + 1):
-        theme = themes[number - 1]
-        if rules.is_sudden_death(number):
-            # One drawn stat, known before the pick; any deck card may be reused.
-            cards = {side: bots[side].pick_for_stat(decks[side], theme, sd_stat) for side in "AB"}
+        sudden = rules.is_sudden_death(number)
+        hands = {side: decks[side] if sudden else [c for c in decks[side] if c["id"] not in used[side]] for side in "AB"}
+        theme = rules.draw_round_theme(hands["A"], hands["B"], previous=previous, rng=rng)
+        previous = theme
+        if sudden:
+            # One drawn stat, known before the pick; any deck card with it may be played.
+            sd_stat = rules.draw_sudden_death_stat(theme, hands["A"], hands["B"], rng=rng)
+            cards = {side: bots[side].pick_for_stat(rules.pickable(hands[side], theme, sd_stat), theme, sd_stat)
+                     for side in "AB"}
             result = rules.sudden_death(theme, sd_stat, cards["A"], cards["B"])["result"]
             points["A"] += result > 0
             points["B"] += result < 0
@@ -144,8 +149,7 @@ def play(deck_a, deck_b, bot_a, bot_b, rng, log, battles_log=None):
             break
         cards = {}
         for side in "AB":
-            options = [c for c in decks[side] if c["id"] not in used[side]]
-            cards[side] = bots[side].pick(options, theme)
+            cards[side] = bots[side].pick(rules.pickable(hands[side], theme), theme)
             used[side].add(cards[side]["id"])
         calls = {side: bots[side].call(cards[side], cards["B" if side == "A" else "A"], theme) for side in "AB"}
         scored = rules.score_round(theme, cards["A"], cards["B"], calls["A"], calls["B"])

@@ -7,6 +7,7 @@ import { useToast } from "../toast";
 import { STAT_LABELS, statValue } from "../format";
 import { TradingCard, type CardFace } from "../components/TradingCard";
 import { useCountdown } from "../useCountdown";
+import { UserLink } from "../components/UserLink";
 
 const PHASE_SECONDS = { CARD_PICK: 30, CALL: 15, REVEAL: 6 } as const;
 const REGULATION_ROUNDS = 6;
@@ -117,7 +118,7 @@ function ScoreBar({ view, onForfeit }: { view: BattleView; onForfeit: () => void
         <span className="font-display text-6xl leading-none font-black tabular-nums">
           {view.score.you}<span className="px-2 text-faint">–</span>{view.score.them}
         </span>
-        <span className="font-display text-2xl font-black text-mute uppercase">{view.opponent.username}</span>
+        <UserLink name={view.opponent.username} className="font-display text-2xl font-black text-mute uppercase" />
         <span className="font-mono text-[11px] tracking-[0.1em] text-faint uppercase">pts</span>
       </div>
       <div className="flex items-center gap-4">
@@ -228,7 +229,8 @@ function PickPhase({ view, onPick, busy }: { view: BattleView; onPick: (id: numb
       </p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {view.hand.map((card) => {
-          const disabled = busy || (card.used && !current.sudden_death);
+          // Server-side rule: unused (any card in sudden death) and has data for this theme.
+          const disabled = busy || card.available === false;
           return (
             <motion.button
               key={card.card_id}
@@ -240,7 +242,11 @@ function PickPhase({ view, onPick, busy }: { view: BattleView; onPick: (id: numb
             >
               <TradingCard card={face(card)} size="fluid" tilt={!disabled} />
               <div className="mt-2 font-mono text-[10px] tracking-[0.1em] text-faint uppercase">
-                {card.used && !current.sudden_death ? "Played" : `${card.credits} credits`}
+                {card.used && !current.sudden_death
+                  ? "Played"
+                  : card.available === false
+                    ? current.sudden_death_stat ? `No ${current.sudden_death_stat.label.toLowerCase()} data` : "Didn't play"
+                    : `${card.credits} credits`}
               </div>
             </motion.button>
           );

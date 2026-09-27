@@ -30,10 +30,6 @@ CALL_SECONDS = 15
 # Pause between rounds so both players see the reveal before the next pick.
 REVEAL_SECONDS = 6
 
-# A rare theme is only drawn when both decks have at least this many cards
-# with verified data for it; otherwise that round is redrawn from common themes.
-MIN_RARE_THEME_CARDS = 2
-
 _rng = secrets.SystemRandom()
 
 
@@ -49,35 +45,30 @@ def has_theme_data(card, theme):
     return any(v is not None for v in ((card.get("stats") or {}).get(theme) or {}).values())
 
 
-def eligible_rare_themes(*decks):
-    """Rare themes where every deck has MIN_RARE_THEME_CARDS cards with data."""
-    return {
-        theme for theme, config in THEMES.items()
-        if config["tier"] == "rare"
-        and all(sum(has_theme_data(c, theme) for c in deck) >= MIN_RARE_THEME_CARDS for deck in decks)
-    }
+def has_stat(card, theme, stat):
+    return stat_value(card, theme, stat) is not None
 
 
-def draw_themes(count=MAX_ROUNDS, rng=_rng, rare_allowed=None):
-    """Weighted theme per round, including the sudden-death round.
+def playable_themes(*hands):
+    """Themes where every hand still has at least one card with data for it."""
+    return {theme for theme in THEMES if all(any(has_theme_data(c, theme) for c in hand) for hand in hands)}
 
-    A rare theme that isn't in rare_allowed (None = all allowed) is replaced by
-    a draw from the common themes. Draws are independent (a theme can recur),
-    except that a theme never repeats in consecutive rounds.
-    """
-    keys = list(THEMES)
-    weights = [THEME_WEIGHTS[THEMES[k]["tier"]] for k in keys]
-    commons = [k for k in keys if THEMES[k]["tier"] == "common"]
-    common_weights = [THEME_WEIGHTS["common"]] * len(commons)
-    themes = []
-    while len(themes) < count:
-        theme = rng.choices(keys, weights=weights, k=1)[0]
-        if THEMES[theme]["tier"] == "rare" and rare_allowed is not None and theme not in rare_allowed:
-            theme = rng.choices(commons, weights=common_weights, k=1)[0]
-        if themes and themes[-1] == theme:
-            continue
-        themes.append(theme)
-    return themes
+
+def draw_round_theme(hand_a, hand_b, previous=None, rng=_rng):
+    """This round's theme, weighted by tier, drawn only from themes both
+    players can still play a card with data for. Never the previous round's
+    theme when another one is possible."""
+    eligible = playable_themes(hand_a, hand_b) or set(THEMES)  # no shared theme: anything goes
+    candidates = sorted(t for t in eligible if t != previous) or sorted(eligible)
+    weights = [THEME_WEIGHTS[THEMES[t]["tier"]] for t in candidates]
+    return rng.choices(candidates, weights=weights, k=1)[0]
+
+
+def pickable(cards, theme, stat=None):
+    """Cards that may be played: those with data for the theme (or, in sudden
+    death, for the drawn stat). If none have it, any card, so a hand never locks."""
+    with_data = [c for c in cards if (has_stat(c, theme, stat) if stat else has_theme_data(c, theme))]
+    return with_data or list(cards)
 
 
 def stat_value(card, theme, stat):
@@ -114,8 +105,11 @@ def score_round(theme, challenger_card, opponent_card, challenger_stat, opponent
     return out
 
 
-def draw_sudden_death_stat(theme, rng=_rng):
-    return rng.choice(THEMES[theme]["stats"])
+def draw_sudden_death_stat(theme, deck_a, deck_b, rng=_rng):
+    """A stat from the theme that both decks have a card for, if there is one."""
+    stats = THEMES[theme]["stats"]
+    shared = [st for st in stats if any(has_stat(c, theme, st) for c in deck_a) and any(has_stat(c, theme, st) for c in deck_b)]
+    return rng.choice(shared or stats)
 
 
 def sudden_death(theme, stat, challenger_card, opponent_card):
