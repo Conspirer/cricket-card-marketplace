@@ -34,6 +34,12 @@ REGISTER_FILES = ["people.csv", "names.csv"]
 BOWLER_WICKETS = {"bowled", "caught", "caught and bowled", "lbw", "stumped", "hit wicket"}
 NOT_DISMISSALS = {"retired hurt", "retired not out"}
 
+# Composite sides aren't anyone's country. A player seen only in one (Rashid
+# Khan: Cricsheet withholds Afghanistan's matches, so his only international
+# appearance is for the World XI) gets "Unknown", and the import then keeps
+# whatever country the row already has (set from Wikipedia by rarity_review).
+COMPOSITE_TEAMS = {"ICC World XI", "World XI", "Asia XI", "Africa XI"}
+
 # Role from share of balls bowled among balls faced + bowled, across formats.
 BATTER_BELOW = 0.25
 BOWLER_ABOVE = 0.80
@@ -238,7 +244,11 @@ def main():
         for s in formats.values():
             s["boundaries"] = s["fours"] + s["sixes"]
     roles = {pid: derive_role(formats) for pid, formats in raw.items()}
-    countries = {pid: teams[pid].most_common(1)[0][0] for pid in raw if teams[pid]}
+    countries = {}
+    for pid in raw:
+        national = Counter({t: n for t, n in teams[pid].items() if t not in COMPOSITE_TEAMS})
+        if national:
+            countries[pid] = national.most_common(1)[0][0]
     ratings = compute_ratings(raw, roles, countries)
     names, variants, register = display_names()
 
@@ -260,7 +270,7 @@ def main():
                 INSERT INTO players (cricsheet_id, name, country, role, career_stats, ratings)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (cricsheet_id) DO UPDATE SET
-                    country = EXCLUDED.country,
+                    country = CASE WHEN EXCLUDED.country = 'Unknown' THEN players.country ELSE EXCLUDED.country END,
                     role = EXCLUDED.role,
                     career_stats = EXCLUDED.career_stats,
                     ratings = EXCLUDED.ratings;

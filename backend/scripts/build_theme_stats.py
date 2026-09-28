@@ -14,6 +14,18 @@ Each infobox figure is cross-checked against Cricsheet's subset:
 Tournament themes come straight from Cricsheet ball-by-ball, restricted to
 editions it covers completely (see themes.py).
 
+Infoboxes are often a few matches behind (and edited piecemeal: runs updated,
+match count not). A stale row is rolled forward with Cricsheet when every
+infobox figure equals Cricsheet's own running total after some match, all
+within ROLL_WINDOW matches of each other: that proves Cricsheet had every
+match the infobox counted up to there. The later matches can then come from
+Cricsheet only if none of them could be against Afghanistan, which Cricsheet
+withholds (India's June 2026 Afghanistan Test is missing, for one). So this
+is done only for Tests, and only for countries that have never played
+Afghanistan in a Test (read live from Wikipedia's Afghanistan Test records).
+Every Full Member has played Afghanistan in ODIs and T20Is, and the matches
+can't be dated from these sources, so those rows are never rolled forward.
+
 A row is verified only when every stat in its theme's set is known (a value,
 or legitimately "no data" such as a bowling average below the minimum
 sample). Unverified rows are kept with a note explaining why and are treated
@@ -33,7 +45,7 @@ import mwparserfromhell
 from psycopg.types.json import Jsonb
 
 from backend.database import get_connection
-from backend.scripts.import_cricsheet import DATA_DIR, new_stats, process_match
+from backend.scripts.import_cricsheet import COUNTERS, DATA_DIR, MATCH_FILES, new_stats, process_match
 from backend.scripts.wikipedia import fetch_wikitext
 from backend.themes import (
     FORMAT_MIN_BALLS_BOWLED,
@@ -135,8 +147,30 @@ def infobox_formats(wikitext):
     return formats, as_of
 
 
-def format_row(theme, infobox, as_of, cricsheet):
-    """Stats row for a Test/ODI/T20I theme from infobox + Cricsheet cross-check."""
+LAST_MATCH_FIELDS = [("lasttestdate", "lasttestyear"), ("lastodidate", "lastodiyear"), ("lastT20Idate", "lastT20Iyear")]
+
+
+def infobox_last_match(wikitext):
+    """Latest "last Test/ODI/T20I" date in the infobox, or None."""
+    code = mwparserfromhell.parse(wikitext or "")
+    boxes = [t for t in code.filter_templates() if t.name.strip().lower().startswith("infobox cricket")]
+    if not boxes:
+        return None
+    box, dates = boxes[0], []
+    for day_field, year_field in LAST_MATCH_FIELDS:
+        day = clean(box.get(day_field).value) if box.has(day_field) else ""
+        year = clean(box.get(year_field).value) if box.has(year_field) else ""
+        if day or year:
+            parsed = parse_as_of(f"{day} {year}")
+            if parsed:
+                dates.append(parsed)
+    return max(dates) if dates else None
+
+
+def format_row(theme, infobox, as_of, cricsheet, sequence=None, data_end=None, country=None, roll_safe=frozenset()):
+    """Stats row for a Test/ODI/T20I theme from infobox + Cricsheet cross-check.
+    sequence: the player's Cricsheet matches in this format, oldest first, for
+    rolling a stale infobox forward; data_end: the archive's last match date."""
     wanted = THEMES[theme]["stats"]
     cs = cricsheet or {}
     cs_matches = cs.get("matches", 0)
@@ -196,6 +230,11 @@ def format_row(theme, infobox, as_of, cricsheet):
     unknown = [k for k in wanted if stats.get(k) == UNKNOWN]
     if unknown:
         notes.append(f"incomplete: {', '.join(unknown)}")
+    fatal = [n for n in notes if not n.startswith("infobox as-of")]
+    if fatal and sequence:
+        rolled = rolled_row(theme, ib, sequence, data_end, country, roll_safe)
+        if rolled:
+            return rolled
     if as_of is None:
         notes.append("infobox as-of date missing or has no year")
 
@@ -222,6 +261,139 @@ def empty_row(theme, source, verified, as_of=None, note=None):
         "as_of": as_of,
         "notes": note,
     }
+
+
+# ---------------------------------------------------------------------------
+# Rolling a stale infobox forward with Cricsheet
+# ---------------------------------------------------------------------------
+
+# Infobox figure -> Cricsheet counter compared against the running totals.
+ROLL_KEYS = {"runs": "runs", "wickets": "wickets", "catches": "catches", "hundreds": "hundreds",
+             "deliveries": "balls_bowled"}
+# Infobox figures may have been updated up to this many matches apart.
+ROLL_WINDOW = 3
+ADDITIVE = [c for c in COUNTERS if c != "highest"]
+
+
+def snapshot_window(infobox, sequence):
+    """(lo, hi) if the infobox is a (possibly piecemeal) snapshot of Cricsheet.
+
+    The match count must equal Cricsheet's after exactly `matches` matches, and
+    every other figure must equal Cricsheet's running total after some match;
+    all of those matches must fit in a window of ROLL_WINDOW. Running totals
+    only rise, so each figure's hits are one contiguous run of matches.
+    Returns None when there's no such window (e.g. Cricsheet is missing a
+    match the infobox counts, or the infobox was edited mid-match).
+    """
+    k = int(infobox.get("matches") or 0)
+    n = len(sequence)
+    if k == 0 or k > n:
+        return None
+    totals, running = [], dict.fromkeys(ROLL_KEYS.values(), 0)
+    for match in sequence:
+        running = {key: running[key] + match[key] for key in running}
+        totals.append(running)
+    intervals = [(k, k)]
+    for ib_key, cs_key in ROLL_KEYS.items():
+        value = int(infobox.get(ib_key) or 0)
+        hits = [i + 1 for i, t in enumerate(totals) if t[cs_key] == value]
+        if not hits:
+            return None
+        intervals.append((hits[0], hits[-1]))
+    lo, hi = max(a for a, _ in intervals), min(b for _, b in intervals)
+    if lo - hi > ROLL_WINDOW:
+        return None
+    return min(lo, hi), max(lo, hi)
+
+
+def cricsheet_totals(sequence):
+    """Theme stats from a complete run of Cricsheet matches."""
+    t = {key: sum(m[key] for m in sequence) for key in ADDITIVE}
+    matches = len(sequence)
+    bat_ok = matches >= FORMAT_MIN_BATTING_MATCHES
+    bowl_ok = t["balls_bowled"] >= FORMAT_MIN_BALLS_BOWLED
+    return {
+        "runs": t["runs"],
+        "hundreds": t["hundreds"],
+        "wickets": t["wickets"],
+        "catches": t["catches"],
+        "batting_average": ratio(t["runs"], t["dismissals"]) if bat_ok else None,
+        "bowling_average": ratio(t["runs_conceded"], t["wickets"]) if bowl_ok and t["wickets"] else None,
+        "economy": ratio(t["runs_conceded"], t["balls_bowled"], 6) if bowl_ok else None,
+        "strike_rate": ratio(t["runs"], t["balls_faced"], 100) if bat_ok else None,
+        "sixes": t["sixes"],
+    }
+
+
+AFGHANISTAN_TEST_RECORDS = "List of Afghanistan Test cricket records"
+CR_CODES = {"AUS": "Australia", "BAN": "Bangladesh", "ENG": "England", "IND": "India", "IRE": "Ireland",
+            "NZ": "New Zealand", "PAK": "Pakistan", "RSA": "South Africa", "SA": "South Africa",
+            "SRI": "Sri Lanka", "SL": "Sri Lanka", "WIN": "West Indies", "WI": "West Indies", "ZIM": "Zimbabwe"}
+
+
+def never_played_afghanistan_in_tests(wikitext):
+    """Countries marked "YTP" (yet to play) in the results-by-opponent table
+    of Afghanistan's Test records. Empty if the table can't be read, which
+    turns rolling forward off rather than guessing."""
+    safe = set()
+    for code, rest in re.findall(r"\{\{cr\|([A-Z]{2,3})\}\}\}*\s*\n(.*)", wikitext or ""):
+        if "YTP" in rest and code in CR_CODES:
+            safe.add(CR_CODES[code])
+    return safe
+
+
+def rolled_row(theme, infobox, sequence, data_end, country=None, roll_safe=frozenset()):
+    if theme != "TEST" or country not in roll_safe:
+        return None  # a later match against Afghanistan could be missing from Cricsheet
+    window = snapshot_window(infobox, sequence)
+    if window is None:
+        return None
+    lo, hi = window
+    stats = cricsheet_totals(sequence)
+    behind = len(sequence) - int(infobox["matches"])
+    span = f"match {lo}" if lo == hi else f"matches {lo}-{hi}"
+    return {
+        "theme": theme,
+        "stats": {k: stats[k] for k in THEMES[theme]["stats"]},
+        "all_stats": stats,
+        "matches": len(sequence),
+        "source": "Wikipedia infobox, rolled forward with Cricsheet",
+        "verified": True,
+        "as_of": data_end,
+        "notes": (f"infobox {behind} matches behind; its figures equal Cricsheet's running totals after {span} "
+                  f"({sequence[hi - 1]['date']}), so later matches come from Cricsheet ({country} has never "
+                  f"played Afghanistan in a Test, the one side Cricsheet withholds)."),
+    }
+
+
+def cricsheet_sequences(cricsheet_ids):
+    """({cricsheet_id: {theme: [per-match counters with "date", oldest first]}},
+    {theme: last match date in the archive}) for the Test/ODI/T20I themes."""
+    wanted = set(cricsheet_ids)
+    theme_of = {fmt: theme for theme, fmt in CRICSHEET_FORMAT.items()}
+    out = defaultdict(lambda: defaultdict(list))
+    data_end = {}
+    for fmt, filename in MATCH_FILES.items():
+        theme = theme_of[fmt]
+        with zipfile.ZipFile(DATA_DIR / filename) as archive:
+            for name in archive.namelist():
+                if not name.endswith(".json"):
+                    continue
+                match = json.loads(archive.read(name))
+                info = match["info"]
+                data_end[theme] = max(data_end.get(theme, ""), info["dates"][-1])
+                registry = info["registry"]["people"]
+                present = {registry[p] for names in info["players"].values() for p in names if p in registry} & wanted
+                if not present:
+                    continue
+                stats = defaultdict(lambda: defaultdict(new_stats))
+                process_match(match, fmt, stats, defaultdict(lambda: defaultdict(int)))
+                for cid in present:
+                    out[cid][theme].append(dict(stats[cid][fmt], date=info["dates"][0]))
+    for per_theme in out.values():
+        for seq in per_theme.values():
+            seq.sort(key=lambda m: m["date"])
+    return out, {t: datetime.strptime(d, "%Y-%m-%d").date() for t, d in data_end.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -297,13 +469,13 @@ def legend_titles():
     return [entry["title"] for entry in json.loads(LEGENDS_FILE.read_text())["legends"]]
 
 
-def build(cursor, extra_player_ids=()):
+def build(cursor, extra_player_ids=(), texts=None):
     """Build and upsert theme stats; returns the rows. Covers every player with a
     card definition, every legend in data/legends.json that has a player row,
     and any extra ids given."""
     cursor.execute(
         """
-        SELECT p.id, p.name, p.cricsheet_id, p.wikipedia_title, p.career_stats,
+        SELECT p.id, p.name, p.country, p.cricsheet_id, p.wikipedia_title, p.career_stats,
                COALESCE(bool_or(d.is_active), false) AS active
         FROM players p LEFT JOIN card_definitions d ON d.player_id = p.id
         WHERE p.id IN (SELECT player_id FROM card_definitions)
@@ -315,10 +487,17 @@ def build(cursor, extra_player_ids=()):
     )
     players = cursor.fetchall()
 
-    print(f"fetching {len(players)} Wikipedia articles")
-    texts = fetch_wikitext([p["wikipedia_title"] for p in players if p["wikipedia_title"]])
+    texts = dict(texts or {})
+    missing = [t for t in [p["wikipedia_title"] for p in players if p["wikipedia_title"]] + [AFGHANISTAN_TEST_RECORDS]
+               if t not in texts]
+    print(f"fetching {len(missing)} Wikipedia articles")
+    texts.update(fetch_wikitext(missing))
+    roll_safe = never_played_afghanistan_in_tests(texts.get(AFGHANISTAN_TEST_RECORDS))
+    print(f"never played Afghanistan in a Test (Test rows may be rolled forward): {sorted(roll_safe) or 'none found'}")
     print("aggregating Cricsheet tournaments")
     tournaments, last_dates = tournament_stats()
+    print("collecting Cricsheet match-by-match records")
+    sequences, data_end = cricsheet_sequences(p["cricsheet_id"] for p in players if p["cricsheet_id"])
 
     rows = []
     for p in players:
@@ -329,7 +508,9 @@ def build(cursor, extra_player_ids=()):
                 if infobox is None:
                     row = empty_row(theme, "Wikipedia infobox", verified=False, note="no Wikipedia infobox found")
                 else:
-                    row = format_row(theme, infobox.get(theme), as_of, career.get(CRICSHEET_FORMAT[theme]))
+                    row = format_row(theme, infobox.get(theme), as_of, career.get(CRICSHEET_FORMAT[theme]),
+                                     sequence=sequences.get(p["cricsheet_id"], {}).get(theme), data_end=data_end.get(theme),
+                                     country=p["country"], roll_safe=roll_safe)
             else:
                 counters = tournaments[theme].get(p["cricsheet_id"], {}).get(theme)
                 row = tournament_row(theme, counters, last_dates.get(theme))

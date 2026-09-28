@@ -104,7 +104,9 @@ def main():
         after = counts(conn)
         show("reset:", before, after)
         tiers = ", ".join(f"{r} {summary['tiers'][r]}" for r in ("Legendary", "Epic", "Rare", "Common"))
-        print(f"\npool rebuilt: {summary['players']} players ({tiers}), {summary['active_definitions']} definitions, "
+        legends = ", ".join(f"{r} {summary['legend_tiers'][r]}" for r in ("Legendary", "Epic"))
+        print(f"\npool rebuilt: {summary['players']} players (current: {tiers}; legends: {legends}), "
+              f"{summary['active_definitions']} definitions, "
               f"{len(summary['overridden'])} overrides")
         for w in summary["warnings"]:
             print(f"WARNING {w}")

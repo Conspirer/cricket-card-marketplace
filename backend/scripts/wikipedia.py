@@ -6,12 +6,27 @@ the Wikimedia User-Agent policy and are batched to stay light on the API.
 
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "CreaseCardGame/0.1 (personal project; contact via github.com/Conspirer)"
 BATCH = 50
+RETRIES = 6
+
+
+def open_json(request, timeout=60):
+    """urlopen + JSON, backing off on 429/503 (honouring Retry-After)."""
+    for attempt in range(RETRIES):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 503) or attempt == RETRIES - 1:
+                raise
+            wait = error.headers.get("Retry-After")
+            time.sleep(int(wait) if wait and wait.isdigit() else 5 * 2 ** attempt)
 
 
 def fetch_wikitext(titles):
@@ -26,8 +41,7 @@ def fetch_wikitext(titles):
             "titles": "|".join(chunk),
         }
         request = urllib.request.Request(API + "?" + urllib.parse.urlencode(params), headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.load(response)["query"]
+        data = open_json(request)["query"]
 
         # requested -> normalized -> redirect target
         alias = {t: t for t in chunk}
@@ -44,5 +58,5 @@ def fetch_wikitext(titles):
                 out[requested] = page["revisions"][0]["slots"]["main"]["content"]
             else:
                 out[requested] = None
-        time.sleep(0.5)
+        time.sleep(1)
     return out

@@ -4,13 +4,17 @@
     python -m backend.scripts.build_card_pool --dry-run  # show what would change
 
 Who's in the pool: every row of data/rarity_review.csv with include=yes (the
-current players, plus any legend you've approved there). Without that file,
-the players who currently have an active definition.
+current players and the legends), then data/pool_overrides.csv on top:
+include=yes adds a player, include=no removes one, edition=legend/current
+moves one between editions, and it always wins. Without the review file, the
+players who currently have an active definition.
 
 Each player's rarity: data/rarity_overrides.csv if listed there (overrides
 always win), otherwise their rank by whole-career score (backend/tiering.py).
-A player gets a card at their rarity and every rarity below it (a Legendary
-player also has Epic, Rare and Common cards).
+Legends (status=legend in the review file) are ranked only against each
+other and are Rare, Epic or Legendary. A player gets a card at their rarity
+and every rarity below it (a Legendary player also has Epic, Rare and Common
+cards); a legend's cards start at Rare.
 
 Idempotent. An existing definition for the same player and rarity is always
 reused (most remaining supply first), even when sold out: a sold-out card stays
@@ -25,11 +29,12 @@ from collections import Counter
 from pathlib import Path
 
 from backend.database import get_connection
-from backend.tiering import RARITIES, assign_tiers, career_score
+from backend.tiering import LEGEND_FLOOR, RARITIES, assign_tiers, career_score
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 REVIEW_FILE = DATA / "rarity_review.csv"
 OVERRIDES_FILE = DATA / "rarity_overrides.csv"
+POOL_OVERRIDES_FILE = DATA / "pool_overrides.csv"
 
 PRINT_RUN = {"Common": 500, "Rare": 100, "Epic": 25}
 LEGENDARY_PRINT_RUN_TOP4 = 5
@@ -52,30 +57,85 @@ def load_overrides(path=OVERRIDES_FILE):
     return overrides
 
 
-def load_candidates(cursor, path=REVIEW_FILE):
-    """Player ids in the pool: include=yes in the review file, else current actives."""
+EDITIONS = ("legend", "current")
+
+
+def load_pool_overrides(path=POOL_OVERRIDES_FILE):
+    """{player_id: {"include": True/False/None, "edition": "legend"/"current"/None}}.
+    A blank field means "no override"; any other unexpected value is an error."""
+    if not Path(path).exists():
+        return {}
+    out = {}
+    with open(path, newline="") as f:
+        for line, row in enumerate(csv.DictReader(f), start=2):
+            if not (row.get("player_id") or "").strip():
+                continue
+            include = (row.get("include") or "").strip().lower()
+            edition = (row.get("edition") or "").strip().lower()
+            if include not in ("yes", "no", ""):
+                raise ValueError(f"{path}:{line}: include must be yes, no or blank, not {row.get('include')!r}")
+            if edition not in EDITIONS + ("",):
+                raise ValueError(f"{path}:{line}: edition must be legend, current or blank, not {row.get('edition')!r}")
+            out[int(row["player_id"])] = {"include": {"yes": True, "no": False}.get(include), "edition": edition or None}
+    return out
+
+
+def apply_pool_overrides(ids, pool_overrides):
+    return sorted((set(ids) | {pid for pid, o in pool_overrides.items() if o["include"] is True})
+                  - {pid for pid, o in pool_overrides.items() if o["include"] is False})
+
+
+def apply_edition_overrides(legend_ids, pool_overrides):
+    return (set(legend_ids) | {pid for pid, o in pool_overrides.items() if o["edition"] == "legend"}) \
+        - {pid for pid, o in pool_overrides.items() if o["edition"] == "current"}
+
+
+def load_candidates(cursor, path=REVIEW_FILE, pool_overrides=None):
+    """Player ids in the pool: include=yes in the review file (else current
+    actives), then data/pool_overrides.csv, which always wins."""
+    pool_overrides = load_pool_overrides() if pool_overrides is None else pool_overrides
     if Path(path).exists():
         with open(path, newline="") as f:
-            return sorted({int(r["player_id"]) for r in csv.DictReader(f) if r.get("include", "").strip().lower() == "yes"})
-    cursor.execute("SELECT DISTINCT player_id FROM card_definitions WHERE is_active ORDER BY 1;")
-    return [r["player_id"] for r in cursor.fetchall()]
+            ids = {int(r["player_id"]) for r in csv.DictReader(f) if r.get("include", "").strip().lower() == "yes"}
+    else:
+        cursor.execute("SELECT DISTINCT player_id FROM card_definitions WHERE is_active ORDER BY 1;")
+        ids = {r["player_id"] for r in cursor.fetchall()}
+    return apply_pool_overrides(ids, pool_overrides)
+
+
+def load_legend_ids(path=REVIEW_FILE, pool_overrides=None):
+    """Players the review file marks as legends (a separate edition), with
+    data/pool_overrides.csv's edition column winning."""
+    pool_overrides = load_pool_overrides() if pool_overrides is None else pool_overrides
+    ids = set()
+    if Path(path).exists():
+        with open(path, newline="") as f:
+            ids = {int(r["player_id"]) for r in csv.DictReader(f) if r.get("status", "").strip() == "legend"}
+    return apply_edition_overrides(ids, pool_overrides)
 
 
 def verified_theme_stats(cursor, player_ids):
+    """{player_id: {theme: {"stats", "matches"}}}, verified rows only: an
+    unverified format is absent (scored on the others), never zero."""
     cursor.execute(
-        "SELECT player_id, theme, stats FROM player_theme_stats WHERE verified AND player_id = ANY(%s);",
+        "SELECT player_id, theme, stats, matches FROM player_theme_stats WHERE verified AND player_id = ANY(%s);",
         (list(player_ids),),
     )
     out = {pid: {} for pid in player_ids}
     for r in cursor.fetchall():
-        out[r["player_id"]][r["theme"]] = r["stats"]
+        out[r["player_id"]][r["theme"]] = {"stats": r["stats"], "matches": r["matches"]}
     return out
 
 
-def compute_tiers(cursor, player_ids, overrides):
+def compute_tiers(cursor, player_ids, overrides, legends=frozenset()):
     stats = verified_theme_stats(cursor, player_ids)
     scores = {pid: career_score(stats[pid]) for pid in player_ids}
-    final, formula, warnings = assign_tiers(scores, overrides)
+    # Included by hand but not rankable (no format with enough matches): last.
+    unranked = sorted(pid for pid, s in scores.items() if s is None)
+    scores = {pid: (0.0 if s is None else s) for pid, s in scores.items()}
+    final, formula, warnings = assign_tiers(scores, overrides, legends)
+    if unranked:
+        warnings.append(f"no format with enough verified matches to rank, placed last: {unranked}")
     return scores, final, formula, warnings
 
 
@@ -85,9 +145,14 @@ def print_run(rarity, rank_within_legendary):
     return PRINT_RUN[rarity]
 
 
-def build_pool(cursor, candidates=None, overrides=None, verbose=True):
-    """Activate exactly the definitions the final tiers call for. Returns a summary."""
-    candidates = load_candidates(cursor) if candidates is None else candidates
+def build_pool(cursor, candidates=None, overrides=None, verbose=True, legends=None):
+    """Activate exactly the definitions the final tiers call for. Returns a summary.
+    With no candidates given, reads the review file and pool overrides (and
+    the legends from the review file); given candidates, legends default to none."""
+    if candidates is None:
+        candidates = load_candidates(cursor)
+        legends = load_legend_ids() if legends is None else legends
+    legends = set(legends or ()) & set(candidates)
     overrides = load_overrides() if overrides is None else overrides
 
     # The review file names players by id. Refuse rather than silently drop an
@@ -105,7 +170,7 @@ def build_pool(cursor, candidates=None, overrides=None, verbose=True):
     # user rows involved, so this can't deadlock with a pack being opened.
     cursor.execute("SELECT id FROM card_definitions ORDER BY id FOR NO KEY UPDATE;")
 
-    scores, final, formula, warnings = compute_tiers(cursor, candidates, overrides)
+    scores, final, formula, warnings = compute_tiers(cursor, candidates, overrides, legends)
     ranked = sorted(candidates, key=lambda pid: (-scores[pid], pid))
 
     # BASE editions only: SBC reward editions are never part of the pack pool.
@@ -121,10 +186,12 @@ def build_pool(cursor, candidates=None, overrides=None, verbose=True):
     cursor.execute("UPDATE card_definitions SET is_active = false WHERE is_active;")
 
     active_ids, created = [], Counter()
-    legendary_rank = 0
+    legendary_rank = {"legend": 0, "current": 0}  # top-4 print runs, per edition
     for pid in ranked:
+        group = "legend" if pid in legends else "current"
         top = RARITIES.index(final[pid])
-        for rarity in RARITIES[: top + 1]:
+        bottom = RARITIES.index(LEGEND_FLOOR) if group == "legend" else 0
+        for rarity in RARITIES[bottom: top + 1]:
             candidates_defs = existing.get((pid, rarity))
             if candidates_defs:
                 chosen = max(candidates_defs, key=lambda d: (d["max_supply"] - d["minted_count"], -d["id"]))
@@ -132,18 +199,20 @@ def build_pool(cursor, candidates=None, overrides=None, verbose=True):
             else:
                 cursor.execute(
                     "INSERT INTO card_definitions (player_id, rarity, max_supply, is_active) VALUES (%s, %s, %s, true) RETURNING id;",
-                    (pid, rarity, print_run(rarity, legendary_rank)),
+                    (pid, rarity, print_run(rarity, legendary_rank[group])),
                 )
                 active_ids.append(cursor.fetchone()["id"])
                 created[rarity] += 1
         if final[pid] == "Legendary":
-            legendary_rank += 1
+            legendary_rank[group] += 1
 
     cursor.execute("UPDATE card_definitions SET is_active = true WHERE id = ANY(%s);", (active_ids,))
 
     summary = {
         "players": len(candidates),
-        "tiers": Counter(final.values()),
+        "legends": len(legends),
+        "tiers": Counter(r for pid, r in final.items() if pid not in legends),
+        "legend_tiers": Counter(r for pid, r in final.items() if pid in legends),
         "overridden": {pid: r for pid, r in overrides.items() if pid in final},
         "warnings": warnings,
         "created": created,
@@ -152,9 +221,11 @@ def build_pool(cursor, candidates=None, overrides=None, verbose=True):
         "active_definitions": len(active_ids),
     }
     if verbose:
-        print(f"pool: {summary['players']} players, {summary['active_definitions']} active definitions")
+        print(f"pool: {summary['players']} players ({summary['legends']} legends), "
+              f"{summary['active_definitions']} active definitions")
         for rarity in reversed(RARITIES):
-            print(f"  {rarity:<10} top tier for {summary['tiers'][rarity]:>3} players  ({created[rarity]} new definitions)")
+            print(f"  {rarity:<10} top tier for {summary['tiers'][rarity]:>3} current players, "
+                  f"{summary['legend_tiers'][rarity]:>2} legends  ({created[rarity]} new definitions)")
         print(f"  overrides applied: {len(summary['overridden'])}")
         print(f"  deactivated: {summary['deactivated']}, newly activated: {summary['activated']}")
         for w in warnings:

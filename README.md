@@ -80,39 +80,49 @@ Leave `DEV_FAUCET_ENABLED` unset. Without the Blueprint, create a **Web Service*
 
 The first deploy builds the empty Neon database from `backend/schema.sql`. Later deploys apply any new files in `backend/migrations/`. Free Render services sleep after about 15 minutes idle, so the first request after that takes around a minute.
 
-### 3. Copying your local data into Neon
+### 3. Replacing Neon's database with the local catalogue
 
-The player catalogue (Cricsheet, Wikipedia and Wikidata data) takes a while to rebuild, so the simplest way to fill Neon is to restore a dump of your local database. To start the live site with a clean economy (no users, cards or battles, catalogue kept), reset a **copy** first:
+The player catalogue (Cricsheet, Wikipedia and Wikidata data, verified theme stats, the built card pool and the SBCs) takes a while to rebuild, so Neon is filled from a dump of the local database with the economy emptied: no users, cards, packs, listings, trades or battles.
+
+**Make the dump.** Work on a scratch copy so the local database keeps its test data:
 
 ```bash
-# 1. Make a scratch copy of the local database and reset its economy. The copy goes
-#    through pg_dump rather than `createdb -T`, which refuses while the app is connected.
+export DATABASE_URL=postgresql://cricket:cricket_dev_password@localhost:5432/cricket_marketplace
+.venv/bin/python -m backend.scripts.seed_sbcs                 # SBCs and reward editions (idempotent)
+
+# Scratch copy through pg_dump (createdb -T refuses while the app is connected).
+docker exec cricket-postgres dropdb -U cricket --if-exists crease_clean
 docker exec cricket-postgres createdb -U cricket crease_clean
 docker exec cricket-postgres sh -c "pg_dump -U cricket -Fc cricket_marketplace | pg_restore -U cricket --no-owner -d crease_clean"
-DATABASE_URL=postgresql://cricket:cricket_dev_password@localhost:5432/crease_clean \
-  .venv/bin/python -m backend.scripts.reset_economy --confirm   # prints counts and audits
 
-# 2. Dump it (custom format).
-docker exec cricket-postgres pg_dump -U cricket -Fc crease_clean > backups/crease_clean.dump
+# Empty the economy and every user; keeps players, theme stats, card definitions
+# (the active pool), SBCs and schema_migrations. Prints counts and runs the audit.
+DATABASE_URL=postgresql://cricket:cricket_dev_password@localhost:5432/crease_clean \
+  .venv/bin/python -m backend.scripts.reset_economy --confirm
+
+docker exec cricket-postgres pg_dump -U cricket -Fc crease_clean > backups/crease_catalogue.dump
 docker exec cricket-postgres dropdb -U cricket crease_clean
 ```
 
-Restore into Neon. This **replaces** the objects in the Neon database, so don't run it against a database holding live data you want to keep. `pg_restore` runs in a `postgres:16` container, so no local client is needed. `--no-owner`/`--no-acl` drop references to the local `cricket` role.
+**The restore script.** `scripts/restore_to_neon.sh` drops the target's whole `public` schema, restores the dump in one transaction (`pg_restore --no-owner --no-privileges` in a `postgres:16` container, so no local client is needed), then prints row counts for players, active card definitions, SBC challenges and users. It refuses without `--confirm`, and refuses Neon's pooled (`-pooler`) host: use the **direct** connection string. `--dump PATH` picks another dump.
 
-```bash
-export NEON_URL='postgresql://USER:PASSWORD@ep-XXXX.REGION.aws.neon.tech/crease?sslmode=require'
+**Go-live order.** Every existing account on the live site is deleted by this, so players sign up again.
 
-docker run --rm -v "$PWD/backups:/backups" postgres:16 \
-  pg_restore --verbose --clean --if-exists --no-owner --no-acl \
-  -d "$NEON_URL" /backups/crease_clean.dump
+1. **Push the code and wait for the Render deploy** to show *Live*. The new code must be running before the new schema arrives; its start-up migrate brings the old Neon database up to date, which is harmless since it's replaced next.
+2. **Suspend the Render service** (service → *Settings* → *Suspend Web Service*), so nothing writes during the restore and its connections close.
+3. **Create a Neon backup branch** (Neon console → *Branches* → *Create branch* from the main branch, for example `before-restore-YYYY-MM-DD`). To roll back, restore the main branch from it in the console.
+4. **Run the restore** against the main branch's direct connection string:
 
-# Check it: migration history should list every migration as applied.
-DATABASE_URL="$NEON_URL" .venv/bin/python -m backend.scripts.migrate --status
-```
+   ```bash
+   DATABASE_URL='postgresql://USER:PASSWORD@ep-XXXX.REGION.aws.neon.tech/crease?sslmode=require' \
+     scripts/restore_to_neon.sh --confirm
+   ```
 
-Then redeploy (or restart) the Render service. Its start-up migrate will report "up to date".
+   Expect about 5,456 players, 332 active card definitions, 5 SBC challenges and 0 users.
+5. **Resume the Render service.** Its start-up log should say `up to date` from migrate (the dump carries `schema_migrations` with every migration applied). Anything else means the dump and the deployed code don't match; suspend again and check before users arrive.
+6. **Smoke test** the live site: `/healthz` returns 200; sign up (the new account has 10,000 Runs); open a pack (serials start at #1); the SBC page lists five challenges; `POST /api/dev/users/<id>/grant` returns 404 (dev tools off). Optionally, `DATABASE_URL=<neon url> .venv/bin/python -m backend.scripts.reset_economy` (no `--confirm`) only reports counts and is a quick read-only check.
 
-If `--status` shows tables but no migration history (a dump taken before `schema_migrations` existed) and the source database was fully migrated, record it with `DATABASE_URL="$NEON_URL" .venv/bin/python -m backend.scripts.migrate --baseline`. To run the economy audit against Neon at any time, run `reset_economy` **without** `--confirm`: it only reports counts.
+The script was tested end to end against a scratch local database standing in for Neon (holding an older schema and a user): it replaced everything, migrate reported `up to date`, the audit held, and sign-up, packs and SBCs worked.
 
 ## Project layout
 
@@ -127,5 +137,9 @@ backend/
   scripts/           migrate, data import, card pool, theme stats, balance harness
   tests/
 frontend/            React app (Vite)
+data/                legends, SBC challenges, rarity review and override files
+scripts/
+  restore_to_neon.sh replace a database with a catalogue dump (see Deploying)
+backups/             local dumps (git-ignored)
 Dockerfile, .dockerignore, render.yaml   deployment (Render + Neon)
 ```

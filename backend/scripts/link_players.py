@@ -22,6 +22,7 @@ import urllib.request
 
 from backend.database import get_connection
 from backend.scripts.import_cricsheet import DATA_DIR
+from backend.scripts.wikipedia import open_json
 
 SPARQL = "https://query.wikidata.org/sparql"
 USER_AGENT = "CreaseCardGame/0.1 (personal project; contact via github.com/Conspirer)"
@@ -54,8 +55,7 @@ def wikidata_lookup(cids):
             SPARQL + "?" + urllib.parse.urlencode({"query": query}),
             headers={"Accept": "application/sparql-results+json", "User-Agent": USER_AGENT},
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            rows = json.load(response)["results"]["bindings"]
+        rows = open_json(request)["results"]["bindings"]
         for row in rows:
             cid = row["cid"]["value"]
             qid = row["item"]["value"].rsplit("/", 1)[-1]
@@ -74,13 +74,46 @@ def wikidata_lookup(cids):
     return found
 
 
+def link(cursor, players, register=None):
+    """Link players (rows with id, name, cricsheet_id) to ESPNcricinfo,
+    Wikidata and Wikipedia, renaming them to their common name.
+    Returns (renamed, unresolved, missing_article)."""
+    register = register or cricinfo_ids()
+    lookup = wikidata_lookup(register[p["cricsheet_id"]] for p in players if p["cricsheet_id"] in register)
+
+    renamed, unresolved = [], []
+    for p in players:
+        cid = register.get(p["cricsheet_id"])
+        hit = lookup.get(cid) if cid else None
+        if not hit:
+            reason = "no ESPNcricinfo id in register" if not cid else (
+                "ambiguous Wikidata match" if cid in lookup else "not found on Wikidata")
+            unresolved.append((p["name"], reason))
+            cursor.execute("UPDATE players SET cricinfo_id = %s WHERE id = %s;", (cid, p["id"]))
+            continue
+
+        qid, label, title = hit
+        common = re.sub(r"\s*\([^)]*\)$", "", title) if title else None
+        new_name = common or label or p["name"]
+        if new_name != p["name"]:
+            renamed.append((p["name"], new_name))
+        cursor.execute(
+            """
+            UPDATE players
+            SET name = %s, cricinfo_id = %s, wikidata_id = %s, wikipedia_title = %s
+            WHERE id = %s;
+            """,
+            (new_name, cid, qid, title, p["id"]),
+        )
+    missing_article = [p["name"] for p in players if (lookup.get(register.get(p["cricsheet_id"])) or (0, 0, 1))[2] is None]
+    return renamed, unresolved, missing_article
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--all", action="store_true", help="every player with a Cricsheet id")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-
-    register = cricinfo_ids()
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -94,40 +127,13 @@ def main():
                 (args.all,),
             )
             players = cursor.fetchall()
-
-            lookup = wikidata_lookup(register[p["cricsheet_id"]] for p in players if p["cricsheet_id"] in register)
-
-            renamed, unresolved = [], []
-            for p in players:
-                cid = register.get(p["cricsheet_id"])
-                hit = lookup.get(cid) if cid else None
-                if not hit:
-                    reason = "no ESPNcricinfo id in register" if not cid else (
-                        "ambiguous Wikidata match" if cid in lookup else "not found on Wikidata")
-                    unresolved.append((p["name"], reason))
-                    cursor.execute("UPDATE players SET cricinfo_id = %s WHERE id = %s;", (cid, p["id"]))
-                    continue
-
-                qid, label, title = hit
-                common = re.sub(r"\s*\([^)]*\)$", "", title) if title else None
-                new_name = common or label or p["name"]
-                if new_name != p["name"]:
-                    renamed.append((p["name"], new_name))
-                cursor.execute(
-                    """
-                    UPDATE players
-                    SET name = %s, cricinfo_id = %s, wikidata_id = %s, wikipedia_title = %s
-                    WHERE id = %s;
-                    """,
-                    (new_name, cid, qid, title, p["id"]),
-                )
+            renamed, unresolved, missing_article = link(cursor, players)
 
             print(f"{len(players)} players checked, {len(renamed)} renamed, {len(unresolved)} unresolved")
             for old, new in renamed:
                 print(f"  renamed  {old!r} -> {new!r}")
             for name, reason in unresolved:
                 print(f"  UNRESOLVED {name!r}: {reason}")
-            missing_article = [p["name"] for p in players if (lookup.get(register.get(p["cricsheet_id"])) or (0, 0, 1))[2] is None]
             for name in missing_article:
                 print(f"  no English Wikipedia article: {name!r}")
 

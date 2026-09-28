@@ -29,7 +29,7 @@ EMPTIED = [
     "user_showcase", "page_views", "sbc_completions", "trade_cards", "trades",
     "card_instances", "pack_openings", "sessions", "users",
 ]
-KEPT = ["players", "player_theme_stats", "card_definitions", "schema_migrations"]
+KEPT = ["players", "player_theme_stats", "card_definitions", "sbc_challenges", "schema_migrations"]
 
 
 def counts(conn):
