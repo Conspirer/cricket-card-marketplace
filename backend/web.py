@@ -1,11 +1,13 @@
 """The root ASGI app: the JSON API at /api plus the built React app, on one
 origin (no CORS). Production guards are switched on by environment variables:
 
-  SITE_PASSWORD   if set, the whole site sits behind HTTP basic auth (any
-                  username, this password). Unset = open, e.g. for local dev.
+  SITE_PASSWORD   optional, off by default (the live site is open). If set,
+                  the whole site sits behind HTTP basic auth (any username,
+                  this password), e.g. to close it for maintenance.
   FORCE_HTTPS     on unless "0": requests a proxy reports as plain HTTP
                   (X-Forwarded-Proto: http, as Render's does) are redirected
-                  to HTTPS, so the password never travels in the clear.
+                  to HTTPS, so passwords and session cookies never travel
+                  in the clear.
                   Direct local requests carry no such header and pass.
 
 /healthz is always open and returns only "ok", for the host's health check.

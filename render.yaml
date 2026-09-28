@@ -7,13 +7,12 @@ services:
     region: singapore
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /healthz   # open even behind SITE_PASSWORD
+    healthCheckPath: /healthz
     autoDeploy: true
     envVars:
       - key: DATABASE_URL        # Neon connection string (direct endpoint, sslmode=require)
         sync: false
-      - key: SITE_PASSWORD       # shared password for the whole site
-        sync: false
       - key: DB_POOL_MAX
         value: "5"
       # DEV_FAUCET_ENABLED is deliberately absent: it must stay unset in production.
+      # SITE_PASSWORD is optional (off): set it only to close the whole site behind one password.

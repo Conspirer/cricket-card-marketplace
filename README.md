@@ -42,7 +42,7 @@ The tests create and drop their own `cricket_test` database on the local Postgre
 
 Players register with a username and password; every new account gets 10,000 Runs. Passwords are stored as scrypt hashes. A login is a server-side session held in an HttpOnly cookie, so it works the same in every tab and on every device. Every action (opening packs, listing, buying, battle picks and calls) is checked against the logged-in user, and acting for anyone else is refused. Browsing (the market, card pages, the player list) doesn't need the account to be the owner, but the site still asks everyone to log in first.
 
-`SITE_PASSWORD` is optional on top of accounts. Keep it if you want to stop strangers even reaching the sign-up page.
+The live site is open: anyone can reach the sign-up page. `SITE_PASSWORD` is an optional extra, off by default; set it only to close the whole site behind one shared password (for example during maintenance).
 
 
 
@@ -52,7 +52,7 @@ Players register with a username and password; every new account gets 10,000 Run
 | `DATABASE_SSLMODE` | `require` for any non-local host, `prefer` for localhost | Only used when the URL has no `sslmode`. Neon requires SSL. |
 | `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `5` | Connections held by the app. Free Postgres plans allow few. |
 | `SITE_PASSWORD` | unset (site open) | If set, the whole site asks for this password (HTTP basic auth; any username). |
-| `FORCE_HTTPS` | on | Requests the proxy reports as plain HTTP (`X-Forwarded-Proto: http`) are redirected to HTTPS, so the password never travels unencrypted. Set `0` to disable. |
+| `FORCE_HTTPS` | on | Requests the proxy reports as plain HTTP (`X-Forwarded-Proto: http`) are redirected to HTTPS, so passwords and session cookies never travel unencrypted. Set `0` to disable. |
 | `DEV_FAUCET_ENABLED` | unset (off) | Enables the dev tools: the Run faucet and the admin endpoints that create players, card definitions and cards. **Leave unset in production.** |
 | `PORT` | `8000` in the image | Render sets it. |
 
@@ -71,12 +71,11 @@ The app ships as one Docker image (`Dockerfile`): a Node stage builds the React 
 
 ### 2. Web service on Render
 
-`render.yaml` describes the service. In Render: **New → Blueprint**, pick this repo, then fill in the two secrets it asks for:
+`render.yaml` describes the service. In Render: **New → Blueprint**, pick this repo, then fill in the secret it asks for:
 
 - `DATABASE_URL`: the Neon connection string
-- `SITE_PASSWORD`: a long shared password
 
-Leave `DEV_FAUCET_ENABLED` unset. Without the Blueprint, create a **Web Service**, choose **Docker** as the runtime, set those two environment variables, and set the health check path to `/healthz`.
+Leave `DEV_FAUCET_ENABLED` and `SITE_PASSWORD` unset. Without the Blueprint, create a **Web Service**, choose **Docker** as the runtime, set `DATABASE_URL`, and set the health check path to `/healthz`.
 
 The first deploy builds the empty Neon database from `backend/schema.sql`. Later deploys apply any new files in `backend/migrations/`. Free Render services sleep after about 15 minutes idle, so the first request after that takes around a minute.
 
@@ -129,7 +128,7 @@ The script was tested end to end against a scratch local database standing in fo
 ```
 backend/
   main.py            JSON API (mounted at /api)
-  web.py             root app: /api + the built frontend, password gate, HTTPS redirect
+  web.py             root app: /api + the built frontend, HTTPS redirect, optional password gate
   battle_routes.py   battle API        battles.py  battle rules (shared with the harness)
   themes.py          battle themes and stat sets
   schema.sql         full schema (fresh databases)
